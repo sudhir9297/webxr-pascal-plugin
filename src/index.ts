@@ -1,65 +1,40 @@
-import type { AnyNodeDefinition, Plugin } from '@pascal-app/core'
-// Side-effect: subscribes the panel store to `selection:find-node` so the
-// host's "find in catalog" lands on the right Nature section (see find-sync.ts).
-import './find-sync'
-import { NATURE_ICON } from './art'
-import { treeDefinition } from './definition'
-import { flowerDefinition } from './flower-definition'
-import { grassDefinition } from './grass-definition'
+import type { Plugin } from '@pascal-app/core'
+import type { ComponentType } from 'react'
 
-type PluginHostPanel = {
-  id: string
-  label: string
-  icon: { kind: 'url'; src: string }
-  component: () => Promise<{ default: React.ComponentType }>
-  pluginId: string
-  description: string
-  creator: {
-    name: string
-    url?: string
-  }
-  pluginUrl: string
-  defaultInstalled: boolean
-}
+export * from './xr/god-mode'
+export * from './xr/human-mode'
 
-/**
- * The trees plugin manifest — the entire public surface of this package. A host
- * loads it through the same `loadPlugin` path the built-ins use: three node kinds
- * (`trees:tree`, `trees:flower`, `trees:grass`) and one left-rail panel
- * (`Trees`). Cast mirrors the built-in bundle: `AnyNodeDefinition` is the
- * hand-maintained union today; the registry derives it post-migration.
- */
-export const treesPlugin: Plugin = {
-  id: 'pascal:trees',
+/** WebXR plugin manifest loaded by the editor host. */
+export const webXRPlugin: Plugin = {
+  id: 'webxr:core',
   apiVersion: 1,
-  nodes: [
-    treeDefinition as unknown as AnyNodeDefinition,
-    flowerDefinition as unknown as AnyNodeDefinition,
-    grassDefinition as unknown as AnyNodeDefinition,
-  ],
+  nodes: [],
 }
 
-export const treesHostPanel: PluginHostPanel = {
-  id: 'pascal:trees:trees',
-  label: 'Nature',
-  icon: { kind: 'url', src: NATURE_ICON },
-  component: () => import('./presets-panel'),
-  pluginId: treesPlugin.id,
-  description: 'Procedural trees, flowers, and grasses for outdoor scenes.',
+/** Editor-owned sidebar panel for WebXR tools. */
+export const webXRHostPanel: WebXRHostPanel = {
+  id: 'webxr:panel',
+  pluginId: webXRPlugin.id,
+  label: 'WebXR',
+  description: 'Build and configure immersive WebXR experiences.',
   creator: {
-    name: 'Pascal',
-    url: 'https://github.com/pascalorg',
+    name: 'WebXR',
+    url: 'https://www.w3.org/TR/webxr/',
   },
-  pluginUrl: 'https://github.com/pascalorg/plugin-trees',
+  pluginUrl: 'https://www.w3.org/TR/webxr/',
+  icon: { kind: 'iconify', name: 'fa6-solid:vr-cardboard' },
+  component: () => import('./panel'),
   defaultInstalled: true,
 }
 
-// NOTE: no re-export from './geometry' — it imports ez-tree, which touches
-// `document` at module scope and would crash SSR (this barrel is eagerly
-// imported by host bootstraps). Lazy client modules import it directly.
-export { treeDefinition } from './definition'
-export { flowerDefinition } from './flower-definition'
-export { FlowerNode, FlowerPreset } from './flower-schema'
-export { grassDefinition } from './grass-definition'
-export { GrassNode, GrassPreset } from './grass-schema'
-export { TreeNode, TreePreset } from './schema'
+type WebXRHostPanel = {
+  id: string
+  pluginId: string
+  label: string
+  description: string
+  creator: { name: string; url: string }
+  pluginUrl: string
+  icon: { kind: 'iconify'; name: string }
+  component: () => Promise<{ default: ComponentType }>
+  defaultInstalled: boolean
+}
