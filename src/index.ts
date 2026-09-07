@@ -3,14 +3,56 @@ import type { ComponentType } from 'react'
 import { WEBXR_PLUGIN_ID } from './runtime'
 
 export {
+  createWebXRStore,
+  getEmulatedXRDevice,
+  getImmersiveVRSupport,
+  mountEmulatorControls,
+  prepareXRPlatform,
+  requestWebXRSession,
+  resolveRuntimeSource,
   useWebXRFeature,
+  useWebXRRuntime,
+  VisibleXRController,
+  VisibleXRHand,
   WEBXR_ORIGIN_POSITION,
   WEBXR_PLUGIN_ID,
+  webXRViewerConfig,
   type WebXRFeature,
+  type WebXRRuntimeState,
+  type WebXRStore,
   type WebXRStoreFactory,
   type WebXRViewerConfig,
+  type XRRuntimeSource,
 } from './runtime'
+export {
+  createXRPreviewSceneSnapshot,
+  openXRPreview,
+  XR_PREVIEW_SCENE_KEY,
+  type WebXRPreviewSceneSnapshot,
+} from './preview'
 export { WebXRToolbarButton } from './toolbar-button'
+export {
+  GOD_ORIGIN_POSITION,
+  GOD_ORIGIN_ROTATION,
+  requestGodScaleReset,
+  useGodScaleView,
+} from './xr/god-mode'
+export { type LocomotionSettings, useLocomotionSettings } from './xr/human-mode'
+export {
+  PlayerModeScene,
+  toggleXRPlayerMode,
+  useXRPlayerMode,
+  XR_PLAYER_MODES,
+  type XRPlayerMode,
+} from './xr/mode-switching'
+export {
+  DEFAULT_WEBXR_SCENE_LAYERS,
+  type WebXRSceneLayers,
+} from './xr/layers'
+export {
+  WebXRSessionRoot,
+  type WebXRSessionRootProps,
+} from './xr/session-root'
 
 export const webXRPlugin: Plugin = {
   id: WEBXR_PLUGIN_ID,

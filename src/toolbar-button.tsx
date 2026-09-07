@@ -2,12 +2,18 @@
 
 import type { WebXRFeature } from './runtime'
 
-export function WebXRToolbarButton({ feature }: { feature: WebXRFeature }) {
+export function WebXRToolbarButton({
+  feature,
+  onEnter,
+}: {
+  feature: WebXRFeature
+  onEnter?: () => void
+}) {
   if (!feature.enabled) return null
 
   const active = feature.status === 'active'
   const entering = feature.status === 'entering'
-  const label = feature.error ?? (active ? 'Exit VR' : 'Enter VR')
+  const label = feature.error ?? (active ? 'Exit VR' : onEnter ? 'Open VR preview' : 'Enter VR')
 
   return (
     <button
@@ -17,7 +23,7 @@ export function WebXRToolbarButton({ feature }: { feature: WebXRFeature }) {
         active ? 'bg-sky-500/15 text-sky-500' : ''
       }`}
       disabled={entering}
-      onClick={() => void (active ? feature.exit() : feature.enter())}
+      onClick={() => void (active ? feature.exit() : onEnter ? onEnter() : feature.enter())}
       title={label}
       type="button"
     >
