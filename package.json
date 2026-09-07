@@ -19,8 +19,12 @@
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },
+  "dependencies": {
+    "@iwer/devui": "2.3.0",
+    "iwer": "2.3.0"
+  },
   "peerDependencies": {
-    "@pascal-app/core": ">=0.9.1 <1",
+    "@pascal-app/core": ">=0.9.1 <2",
     "@react-three/drei": "^10",
     "@react-three/fiber": "^9",
     "@react-three/xr": "^6",
@@ -37,6 +41,7 @@
     "@types/node": "^22.19.12",
     "@types/react": "^19.2.2",
     "@types/three": "^0.184.0",
+    "@types/webxr": "^0.5.23",
     "react": "^19",
     "three": "^0.185",
     "three-mesh-bvh": "^0.9.8",

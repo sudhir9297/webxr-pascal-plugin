@@ -1,9 +1,11 @@
 # WebXR plugin
 
-WebXR tools and editor integration for immersive experiences.
+WebXR session support for the Pascal editor.
 
-This repository contains the WebXR package shell. Runtime features and editor
-integration will be added as the WebXR requirements are defined.
+Installing the plugin adds a VR button beside Preview. The button starts an
+`immersive-vr` session with the current viewer and changes to an Exit VR action
+until the session ends. Development browsers without native WebXR hardware use
+an emulated Meta Quest 3 runtime with IWER controls.
 
 ## Development
 
@@ -13,16 +15,9 @@ bun run check-types
 bun test
 ```
 
-The package implements the editor host's public plugin contract through
-`@pascal-app/core`.
-
-## XR structure
-
-- `src/xr/god-mode` handles scene-scale navigation, controller grips, and hand
-  palm grabs.
-- `src/xr/human-mode` handles first-person locomotion, collision correction,
-  snap turning, haptics, and comfort UI.
-- `src/xr/mode-switching` contains the shared God/Human mode state.
+The package exposes its plugin manifest, host panel, toolbar button, and viewer
+XR configuration from `src/index.ts`. Player modes and locomotion are outside
+this first implementation.
 
 ## pmndrs documentation
 
