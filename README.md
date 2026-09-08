@@ -14,10 +14,26 @@ The plugin owns the XR runtime:
 - default WebXR controller and hand models
 - God and Human modes, locomotion, collision, and comfort controls
 - tracked pointer rays and stereo-eye layer handling
+- the left-hand Build, Paint, and Settings wand UI, including its spatial controls and session state
+- the Pascal editor input bridge, preview environment, and development emulator harness
+- Pascal-specific Build, Paint, Terrain, selection, and parametric-settings models
 
 The Pascal viewer remains the host for the scene renderer, lights, materials,
-and camera theme. The editor supplies its editing tools and wand panel as
-children. Neither package implements the XR session or player modes.
+and camera theme. The editor supplies a small `PascalXRWandBindings` object for
+private desktop commands that are not part of the public editor package API.
+The plugin turns those bindings into its `XRWandAdapter`; the editor does not
+implement the XR session, player modes, controller/hand attachment, input
+bridge, emulator harness, or wand models and rendering.
+
+Pascal-specific host integration is isolated from the generic WebXR runtime:
+
+```text
+src/integrations/pascal-editor/
+├── input/    # editor event routing and reference-space ray conversion
+├── preview/  # standalone scene host and immersive error boundary
+├── testing/  # development emulator harness
+└── wand/     # host bindings plus Build/Paint/Settings/Terrain models
+```
 
 ## Development
 
@@ -27,9 +43,10 @@ bun run check-types
 bun test
 ```
 
-The package exposes its plugin manifest, toolbar button, preview handoff,
-runtime hooks, viewer configuration, player modes, and session modules from
-`src/index.ts`.
+The root package exposes its manifest, toolbar button, preview handoff, runtime
+hooks, viewer configuration, player modes, and generic wand API. Pascal editor
+integration is exposed separately from `@webxr/plugin/pascal-editor` so generic
+consumers do not eagerly load editor-only modules.
 
 ## pmndrs documentation
 

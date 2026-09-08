@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./pascal-editor": {
+      "types": "./src/integrations/pascal-editor/index.ts",
+      "default": "./src/integrations/pascal-editor/index.ts"
     }
   },
   "files": [
@@ -21,10 +25,13 @@
   },
   "dependencies": {
     "@iwer/devui": "2.3.0",
-    "iwer": "2.3.0"
+    "iwer": "2.3.0",
+    "lucide-react": "^1.7.0"
   },
   "peerDependencies": {
-    "@pascal-app/core": ">=0.9.1 <2",
+    "@pascal-app/core": "^1.0.0-beta.5",
+    "@pascal-app/editor": "^1.0.0-beta.5",
+    "@pascal-app/viewer": "^1.0.0-beta.5",
     "@react-three/drei": "^10",
     "@react-three/fiber": "^9",
     "@react-three/xr": "^6",
@@ -33,7 +40,9 @@
     "zustand": "^5"
   },
   "devDependencies": {
-    "@pascal-app/core": "0.9.1",
+    "@pascal-app/core": "^1.0.0-beta.5",
+    "@pascal-app/editor": "^1.0.0-beta.5",
+    "@pascal-app/viewer": "^1.0.0-beta.5",
     "@react-three/drei": "^10",
     "@react-three/fiber": "^9",
     "@react-three/xr": "^6",

@@ -37,7 +37,10 @@ export {
   requestGodScaleReset,
   useGodScaleView,
 } from './xr/god-mode'
-export { type LocomotionSettings, useLocomotionSettings } from './xr/human-mode'
+export {
+  type LocomotionSettings,
+  useLocomotionSettings,
+} from './xr/human-mode'
 export {
   PlayerModeScene,
   toggleXRPlayerMode,
@@ -53,6 +56,45 @@ export {
   WebXRSessionRoot,
   type WebXRSessionRootProps,
 } from './xr/session-root'
+export {
+  getPage,
+  getPageWithPinnedFirst,
+  PageArrows,
+  PanelFace,
+  PanelHeader,
+  PanelHint,
+  PanelIcon,
+  resolveWandPanelFacePose,
+  SettingChoice,
+  SettingCycle,
+  SettingStepper,
+  shapeLinePoints,
+  SpatialButton,
+  SpatialLine,
+  SpatialText,
+  useXRWandPanelSettings,
+  XR_WAND_PANEL_INPUT_NAME,
+  XR_WAND_PANEL_LAYOUT,
+  XR_WAND_PANEL_SCALE_MAX,
+  XR_WAND_PANEL_SCALE_MIN,
+  XR_WAND_PANEL_SCALE_STEP,
+  XR_WAND_THEME,
+  XRWandBuildPanel,
+  XRWandInputOverlay,
+  XRWandPaintPanel,
+  XRWandPanel,
+  XRWandPanelShell,
+  type XRWandAction,
+  type XRWandAdapter,
+  type XRWandBuildItem,
+  type XRWandBuildModel,
+  type XRWandBuildSection,
+  type XRWandIconModel,
+  type XRWandPaintItem,
+  type XRWandPaintModel,
+  type XRWandSettingRow,
+  type XRWandSettingsModel,
+} from './xr/wand'
 
 export const webXRPlugin: Plugin = {
   id: WEBXR_PLUGIN_ID,
