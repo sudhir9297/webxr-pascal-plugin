@@ -32,6 +32,7 @@ export type XREmulatorTestHarness = {
   clickNode: (nodeId: string, inputKind?: InputKind) => Promise<boolean>
   clickNodeSurface: (nodeId: string, inputKind?: InputKind) => Promise<boolean>
   drag: (names: string[], inputKind?: InputKind) => Promise<boolean>
+  dragWorkspace: (delta: [number, number, number], inputKind?: InputKind) => Promise<boolean>
   dragNodeTo: (
     nodeId: string,
     worldPoint: [number, number, number],
@@ -107,6 +108,12 @@ export type XREmulatorTestHarness = {
     terrainSampling: boolean
     terrainVerb: string
     wandPanelScale: number
+    workspace: {
+      position: number[]
+      scale: number[]
+      contentVisible: boolean
+      dragging: boolean
+    } | null
     wallSnappingMode: string
     scope: string
     selectedIds: string[]
@@ -689,6 +696,34 @@ export function XREmulatorTestHarnessBridge() {
       clickNode,
       clickNodeSurface,
       drag,
+      dragWorkspace: async (delta, inputKind = 'controller') => {
+        if (!(await aimAt('xr-workspace-drag-handle', inputKind))) return false
+        const device = getEmulatedXRDevice()
+        const workspace = findTarget('xr-editor-wand-panel')
+        if (!device || !workspace) return false
+        const before = workspace.position.clone()
+        const deviceId = `${inputKind}-right`
+        const transform = (await device.remote.dispatch('get_transform', { device: deviceId })) as {
+          orientation: { w: number; x: number; y: number; z: number }
+          position: { x: number; y: number; z: number }
+        }
+        try {
+          if (!(await setSelectValueAndWait(1, inputKind, 'selectstart'))) return false
+          await device.remote.dispatch('set_transform', {
+            device: deviceId,
+            orientation: transform.orientation,
+            position: {
+              x: transform.position.x + delta[0],
+              y: transform.position.y + delta[1],
+              z: transform.position.z + delta[2],
+            },
+          })
+          await waitForXRFrames(3)
+          return workspace.position.distanceTo(before) > 0.01
+        } finally {
+          await setSelectValueAndWait(0, inputKind, 'selectend')
+        }
+      },
       dragNodeTo,
       listSceneNodes: () =>
         Object.values(useScene.getState().nodes)
@@ -759,6 +794,7 @@ export function XREmulatorTestHarnessBridge() {
       sculptLevelPoints,
       snapshot: () => {
         const godViewRoot = findTarget('xr-player-scene-root')
+        const workspace = findTarget('xr-editor-wand-panel')
         const nodeCounts: Record<string, number> = {}
         for (const node of Object.values(useScene.getState().nodes)) {
           if (node) nodeCounts[node.type] = (nodeCounts[node.type] ?? 0) + 1
@@ -787,6 +823,14 @@ export function XREmulatorTestHarnessBridge() {
           terrainSampling: useEditor.getState().terrainSampling,
           terrainVerb: useEditor.getState().terrainVerb,
           wandPanelScale: useXRWandPanelSettings.getState().panelScale,
+          workspace: workspace
+            ? {
+                position: workspace.getWorldPosition(new Vector3()).toArray(),
+                scale: workspace.children[0]?.getWorldScale(new Vector3()).toArray() ?? [],
+                contentVisible: !!findTarget('xr-workspace-content'),
+                dragging: workspace.userData.dragging === true,
+              }
+            : null,
           wallSnappingMode: useEditor.getState().snappingModeByContext.wall,
           scope: useInteractionScope.getState().scope.kind,
           selectedIds: useViewer.getState().selection.selectedIds,

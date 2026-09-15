@@ -18,6 +18,7 @@ export function createWebXRViewerSession(
   sceneContent?: ReactNode,
   layers?: WebXRSceneLayers,
   onError?: (cause: unknown) => void,
+  uiContent?: ReactNode,
 ) {
   return {
     onError,
@@ -36,7 +37,12 @@ export function createWebXRViewerSession(
     },
     Scene: function Scene({ children }: WrapperProps) {
       return (
-        <PlayerModeScene inputSourceOverlay={inputSourceOverlay} layers={layers} store={store}>
+        <PlayerModeScene
+          inputSourceOverlay={inputSourceOverlay}
+          layers={layers}
+          store={store}
+          uiContent={uiContent}
+        >
           {children}
           {sceneContent}
         </PlayerModeScene>

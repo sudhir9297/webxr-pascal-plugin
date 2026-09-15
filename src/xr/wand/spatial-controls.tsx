@@ -140,21 +140,28 @@ export function SpatialButton({
   )
 }
 
-export function PanelFace() {
+export function PanelFace({
+  width = XR_WAND_PANEL_LAYOUT.faceWidth,
+  height = XR_WAND_PANEL_LAYOUT.faceHeight,
+}: {
+  width?: number
+  height?: number
+} = {}) {
   const { overlay } = useWebXRSceneLayers()
   const shape = useMemo(
-    () =>
-      roundedShape(
-        XR_WAND_PANEL_LAYOUT.faceWidth,
-        XR_WAND_PANEL_LAYOUT.faceHeight,
-        XR_WAND_PANEL_LAYOUT.faceCornerRadius,
-      ),
-    [],
+    () => roundedShape(width, height, XR_WAND_PANEL_LAYOUT.faceCornerRadius),
+    [width, height],
   )
   const points = useMemo(() => shapeLinePoints(shape), [shape])
   return (
     <>
-      <mesh layers={overlay} position={[0, 0, -0.012]}>
+      <mesh
+        layers={overlay}
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        position={[0, 0, -0.012]}
+      >
         <shapeGeometry args={[shape, 8]} />
         <meshBasicMaterial color={panel} depthWrite opacity={1} />
       </mesh>
@@ -167,11 +174,15 @@ export function PanelHeader({
   mark,
   onDelete,
   title,
+  width = XR_WAND_PANEL_LAYOUT.faceWidth,
 }: {
   mark?: string
   onDelete?: () => void
   title: string
+  width?: number
 }) {
+  const left = -width / 2 + 0.06
+  const right = width / 2 - 0.06
   return (
     <>
       <SpatialText
@@ -179,7 +190,7 @@ export function PanelHeader({
         anchorY="middle"
         color={text}
         fontSize={0.052}
-        position={[-0.35, 0.45, 0.012]}
+        position={[left, 0.45, 0.012]}
       >
         {title}
       </SpatialText>
@@ -189,7 +200,7 @@ export function PanelHeader({
           anchorY="middle"
           color={muted}
           fontSize={0.024}
-          position={[onDelete ? 0.08 : 0.35, 0.45, 0.012]}
+          position={[onDelete ? right - 0.27 : right, 0.45, 0.012]}
         >
           {mark}
         </SpatialText>
@@ -199,7 +210,7 @@ export function PanelHeader({
           color="#7f1d1d"
           name="xr-setting-delete"
           onClick={onDelete}
-          position={[0.29, 0.45, 0]}
+          position={[right - 0.06, 0.45, 0]}
           size={[0.14, 0.06]}
         >
           <SpatialText
@@ -218,8 +229,8 @@ export function PanelHeader({
         opacity={0.7}
         lineWidth={1}
         points={[
-          [-0.36, 0.405, 0.01],
-          [0.36, 0.405, 0.01],
+          [left, 0.405, 0.01],
+          [right, 0.405, 0.01],
         ]}
       />
     </>

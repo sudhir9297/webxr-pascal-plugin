@@ -7,7 +7,7 @@ import { useEffect, useMemo } from 'react'
 import { createWebXRViewerSession, useWebXRSession } from '../../session'
 import { requestGodScaleReset } from '../../xr/god-mode'
 import { toggleXRPlayerMode, useXRPlayerMode, XR_PLAYER_MODES } from '../../xr/mode-switching'
-import { XRWandInputOverlay } from '../../xr/wand'
+import { XRFloatingWorkspace } from '../../xr/wand'
 import { XREditorInputBridge } from './input/editor-input-bridge'
 import { XREmulatorTestHarnessBridge } from './testing/emulator-test-harness'
 import type { PascalXRWandBindings } from './wand/bindings'
@@ -51,19 +51,17 @@ export function usePascalWebXR(bindings: PascalXRWandBindings) {
   const immersive = useMemo(() => {
     if (!session || runtime.status !== 'ready') return undefined
     const adapter = createPascalXRWandAdapter(bindings)
-    function WandOverlay({ type }: { type: 'controller' | 'hand' }) {
-      return <XRWandInputOverlay adapter={adapter} type={type} />
-    }
     return createWebXRViewerSession(
       runtime.store,
       session,
-      WandOverlay,
+      undefined,
       <>
         <XREditorInputBridge />
         {process.env.NODE_ENV !== 'production' && <XREmulatorTestHarnessBridge />}
       </>,
       { batched: BATCHED_LAYER, overlay: OVERLAY_LAYER, zone: ZONE_LAYER },
       fail,
+      <XRFloatingWorkspace adapter={adapter} />,
     )
   }, [bindings, fail, runtime, session])
 

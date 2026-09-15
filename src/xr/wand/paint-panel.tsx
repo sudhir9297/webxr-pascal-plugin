@@ -7,7 +7,7 @@ import { SpatialLine } from './spatial-line'
 import { SpatialText } from './spatial-text'
 import { XR_WAND_THEME } from './theme'
 
-const MATERIAL_TILE_SIZE: [number, number] = [0.215, 0.205]
+const MATERIAL_TILE_SIZE: [number, number] = [0.255, 0.205]
 const MATERIAL_PREVIEW_SIZE = 0.116
 const MATERIAL_GRID_TOP = 0.135
 const MATERIAL_GRID_ROW_GAP = 0.25
@@ -22,8 +22,8 @@ const MATERIAL_PREVIEW_FRAME_POINTS: [number, number, number][] = [
 
 function materialPosition(index: number): [number, number, number] {
   return [
-    -0.255 + (index % 3) * 0.255,
-    MATERIAL_GRID_TOP - Math.floor(index / 3) * MATERIAL_GRID_ROW_GAP,
+    -0.45 + (index % 4) * 0.3,
+    MATERIAL_GRID_TOP - Math.floor(index / 4) * MATERIAL_GRID_ROW_GAP,
     0,
   ]
 }
@@ -54,7 +54,7 @@ function MaterialTile({ item, index }: { item: XRWandPaintItem; index: number })
       <SpatialText
         color={XR_WAND_THEME.text}
         fontSize={materialLabelFontSize(item.label)}
-        maxWidth={0.19}
+        maxWidth={0.23}
         position={[0, -0.07, 0.012]}
       >
         {item.label}
@@ -68,13 +68,13 @@ export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
 
   return (
     <group name="xr-wand-paint-panel">
-      <PanelHeader mark={model.mark} title="Paint" />
+      <PanelHeader mark={model.mark} title="Paint" width={1.4} />
       <group position={[0, 0.345, 0]}>
         <SpatialButton
           disabled={!model.category.canChange}
           name="xr-paint-previous-category"
           onClick={model.category.previous}
-          position={[-0.31, 0, 0]}
+          position={[-0.55, 0, 0]}
           size={[0.075, 0.06]}
         >
           <SpatialText color={XR_WAND_THEME.text} fontSize={0.027} position={[0, 0, 0.012]}>
@@ -88,7 +88,7 @@ export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
           disabled={!model.category.canChange}
           name="xr-paint-next-category"
           onClick={model.category.next}
-          position={[0.31, 0, 0]}
+          position={[0.55, 0, 0]}
           size={[0.075, 0.06]}
         >
           <SpatialText color={XR_WAND_THEME.text} fontSize={0.027} position={[0, 0, 0.012]}>
@@ -100,9 +100,9 @@ export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
         <SpatialButton
           name="xr-paint-start"
           onClick={model.startPainting}
-          position={[-0.17, 0, 0]}
+          position={[-0.245, 0, 0]}
           selected={model.brushActive}
-          size={[0.3, 0.06]}
+          size={[0.44, 0.06]}
         >
           <SpatialText color={XR_WAND_THEME.text} fontSize={0.019} position={[0, 0, 0.012]}>
             {model.brushActive ? 'Brush armed' : 'Start painting'}
@@ -111,9 +111,9 @@ export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
         <SpatialButton
           name="xr-paint-eraser"
           onClick={model.toggleEraser}
-          position={[0.17, 0, 0]}
+          position={[0.245, 0, 0]}
           selected={model.eraserActive}
-          size={[0.3, 0.06]}
+          size={[0.44, 0.06]}
         >
           <SpatialText color={XR_WAND_THEME.text} fontSize={0.019} position={[0, 0, 0.012]}>
             Eraser
@@ -138,7 +138,7 @@ export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
         onClick={model.scope.onSelect}
         position={[0, -0.265, 0]}
         selected={model.scope.selected}
-        size={[0.47, 0.055]}
+        size={[0.7, 0.055]}
       >
         <SpatialText
           color={model.scope.disabled ? XR_WAND_THEME.muted : XR_WAND_THEME.text}

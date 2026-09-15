@@ -74,6 +74,7 @@ export {
   XR_WAND_PANEL_SCALE_MIN,
   XR_WAND_PANEL_SCALE_STEP,
   XR_WAND_THEME,
+  XRFloatingWorkspace,
   XRWandBuildPanel,
   XRWandInputOverlay,
   XRWandPaintPanel,

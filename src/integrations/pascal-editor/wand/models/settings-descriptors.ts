@@ -71,7 +71,14 @@ export function resolveXRSettingsContext({
   if (mode !== 'build' || !tool) return null
   const definition = nodeRegistry.get(tool)
   if (!definition) return null
-  const defaults = definition.defaults() as Record<string, unknown>
+  let defaults: Record<string, unknown>
+  try {
+    defaults = definition.defaults() as Record<string, unknown>
+  } catch {
+    // A plugin definition with invalid defaults must not crash the XR viewer.
+    // The editor can still show its general settings until that definition is fixed.
+    return null
+  }
   const node = {
     ...defaults,
     ...toolDefaults,

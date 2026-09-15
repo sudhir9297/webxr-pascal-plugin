@@ -28,6 +28,7 @@ import {
   showHandLocomotionJoystick,
 } from '../store/hand-locomotion-joystick'
 import { useLocomotionSettings } from '../store/locomotion-settings'
+import { spatialUIInputOwnership } from '../../spatial-ui'
 
 const LOCOMOTION_HAND = 'left'
 const TURN_HAND = 'right'
@@ -103,7 +104,12 @@ export function HumanModeHandControls() {
     )
     pinching.current = nextPinching
 
-    if (mode !== XR_PLAYER_MODES.HUMAN || !origin || !tracked) {
+    if (
+      mode !== XR_PLAYER_MODES.HUMAN ||
+      !origin ||
+      !tracked ||
+      spatialUIInputOwnership.busy(handedness)
+    ) {
       active.current = false
       controlOriginSet.current = false
       hideHandLocomotionJoystick(handedness)

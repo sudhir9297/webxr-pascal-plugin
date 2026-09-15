@@ -13,7 +13,7 @@ The plugin owns the XR runtime:
 - default WebXR controller and hand models
 - God and Human modes, locomotion, collision, and comfort controls
 - tracked pointer rays and stereo-eye layer handling
-- the left-hand Build, Paint, and Settings wand UI, including its spatial controls and session state
+- a floating Build, Paint, and Settings workspace, including its spatial controls and session state
 - the Pascal editor input bridge, inline session integration and development emulator harness
 - Pascal-specific Build, Paint, Terrain, selection, and parametric-settings models
 
@@ -35,6 +35,21 @@ src/integrations/pascal-editor/
 ```
 
 ## Development
+
+### Floating XR workspace
+
+The Pascal integration opens a stationary workspace 1.05 m ahead of the user. Paint,
+Build, and Settings share one tall panel with a compact vertical tool rail on its
+left. Drag the bar below the panel to move it. Panel size remains available in
+Settings, and tab navigation and tool selections are preserved.
+
+Press left-controller **Y** to bring the workspace back in front of you.
+The tool rail also has a Center button. **X** switches between God and Human
+mode. The workspace stays independent of God-mode model scaling and does not
+follow the user. Direct touch/poke interaction is not enabled; use rays and
+trigger/pinch selection.
+
+### Local checks
 
 ```bash
 cd ../editor

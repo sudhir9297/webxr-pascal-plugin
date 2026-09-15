@@ -58,6 +58,7 @@ function XRSessionBinding({
     let restoreFrameLoop: (() => void) | undefined
     let resyncInputsOnNextFrame = false
     let restoreDrawBuffers: (() => void) | undefined
+    let removeEmulatorResize: (() => void) | undefined
 
     const binding = Symbol('xr-session-binding')
     activeBinding.current = binding
@@ -135,6 +136,18 @@ function XRSessionBinding({
         if (ownsXRFrameLoopBinding(activeBinding.current, binding)) restore()
         return
       }
+      if (renderer.domElement.parentElement?.dataset.webxr_runtime) {
+        // The editor's renderer was sized for its split viewer before IWER
+        // moved it into the fullscreen emulator host. Resize the drawing
+        // surface as well as its CSS box so neither eye retains that old pane.
+        const resize = () => {
+          renderer.setSize(window.innerWidth, window.innerHeight, false)
+          rootStore.getState().setSize(window.innerWidth, window.innerHeight)
+        }
+        resize()
+        window.addEventListener('resize', resize)
+        removeEmulatorResize = () => window.removeEventListener('resize', resize)
+      }
       session.addEventListener(
         'end',
         () => stopXRFrameLoop(renderer as unknown as XRFrameLoopRenderer),
@@ -174,6 +187,7 @@ function XRSessionBinding({
     return () => {
       cancelled = true
       restoreDrawBuffers?.()
+      removeEmulatorResize?.()
       if (ownsXRFrameLoopBinding(activeBinding.current, binding)) restoreFrameLoop?.()
     }
   }, [onError, renderer, r3fXR, rootStore, session, store])

@@ -107,7 +107,7 @@ export function XRWandSettingsPanel({ adapter }: { adapter: XRWandAdapter }) {
 
   return (
     <group name="xr-wand-settings-panel">
-      <PanelHeader mark={model.mark} onDelete={model.onDelete} title={model.title} />
+      <PanelHeader mark={model.mark} onDelete={model.onDelete} title={model.title} width={1.4} />
       {model.headerActions?.length ? (
         <group position={[0, 0.3, 0]}>
           {model.headerActions.map((action, index) => (

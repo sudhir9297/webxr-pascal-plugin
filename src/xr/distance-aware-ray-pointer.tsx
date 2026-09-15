@@ -17,6 +17,7 @@ import {
   resolvePointerCursorSize,
 } from './pointer-cursor'
 import { PointerRingMaterial } from './pointer-ring-material'
+import { isSpatialUIObject, spatialUIInputOwnership } from './spatial-ui'
 
 const NEAR_RAY_HIDE_DISTANCE = 0.2
 const Z_AXIS = new Vector3(0, 0, 1)
@@ -37,6 +38,7 @@ export function DistanceAwareRayPointer({
   const rayModel = useRef<Mesh>(null)
   const cursorModel = useRef<Mesh>(null)
   const scene = useThree((current) => current.scene)
+  const renderer = useThree((current) => current.gl)
   const cursorMaterial = useMemo(() => new PointerRingMaterial(), [])
   const cursorGeometry = useMemo(
     () => new RingGeometry(POINTER_CURSOR_INNER_RADIUS, POINTER_CURSOR_OUTER_RADIUS, 32),
@@ -51,6 +53,25 @@ export function DistanceAwareRayPointer({
     typeof options.cursorModel === 'object' ? options.cursorModel : undefined
 
   usePointerXRInputSourceEvents(pointer, state.inputSource, 'select', state.events)
+  useEffect(() => {
+    const session = renderer.xr.getSession()
+    const source = state.inputSource
+    const start = (event: XRInputSourceEvent) => {
+      if (event.inputSource === source) {
+        spatialUIInputOwnership.press(source, isSpatialUIObject(pointer.getIntersection()?.object))
+      }
+    }
+    const end = (event: XRInputSourceEvent) => {
+      if (event.inputSource === source) spatialUIInputOwnership.release(source)
+    }
+    session?.addEventListener('selectstart', start)
+    session?.addEventListener('selectend', end)
+    return () => {
+      session?.removeEventListener('selectstart', start)
+      session?.removeEventListener('selectend', end)
+      spatialUIInputOwnership.remove(source)
+    }
+  }, [pointer, renderer, state.inputSource])
   useEffect(() => () => cursorMaterial.dispose(), [cursorMaterial])
   useEffect(() => () => cursorGeometry.dispose(), [cursorGeometry])
   useEffect(() => {
@@ -66,10 +87,22 @@ export function DistanceAwareRayPointer({
     }
   }, [layers, pointer])
 
-  useFrame(() => {
+  useFrame((_, __, frame) => {
     const intersection = pointer.getIntersection()
+    const referenceSpace = renderer.xr.getReferenceSpace()
+    const tracked =
+      !frame || !referenceSpace || !!frame.getPose(state.inputSource.targetRaySpace, referenceSpace)
+    if (tracked) {
+      spatialUIInputOwnership.hover(
+        state.inputSource,
+        pointer.getEnabled() && isSpatialUIObject(intersection?.object),
+      )
+    } else {
+      spatialUIInputOwnership.remove(state.inputSource)
+    }
     const distance = intersection?.distance
     if (
+      !tracked ||
       !intersection ||
       distance == null ||
       !pointer.getEnabled() ||

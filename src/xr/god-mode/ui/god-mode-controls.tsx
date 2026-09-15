@@ -15,6 +15,7 @@ import {
 } from '../lib/scale-interaction'
 import { getGodScaleHandState } from '../store/god-mode-hand-store'
 import { useGodScaleView } from '../store/god-mode-view-store'
+import { spatialUIInputOwnership } from '../../spatial-ui'
 
 function isControllerGrabPressed(state: XRControllerState | undefined) {
   if (state?.gamepad?.['xr-standard-squeeze']?.state === 'pressed') return true
@@ -74,8 +75,10 @@ function GodScaleController({ sceneRootRef }: { sceneRootRef: RefObject<Object3D
 
   useFrame((_, __, frame) => {
     const root = sceneRootRef.current
-    const leftPressed = isControllerGrabPressed(leftController)
-    const rightPressed = isControllerGrabPressed(rightController)
+    const leftPressed =
+      !spatialUIInputOwnership.busy('left') && isControllerGrabPressed(leftController)
+    const rightPressed =
+      !spatialUIInputOwnership.busy('right') && isControllerGrabPressed(rightController)
     const mode: GodScaleGestureMode | null =
       leftPressed && rightPressed ? 'two' : leftPressed ? 'left' : rightPressed ? 'right' : null
 
@@ -123,14 +126,10 @@ function GodScaleHandController({ sceneRootRef }: { sceneRootRef: RefObject<Obje
     const root = sceneRootRef.current
     const leftHand = getGodScaleHandState('left')
     const rightHand = getGodScaleHandState('right')
+    const leftGrabbed = leftHand.grabbed && !spatialUIInputOwnership.busy('left')
+    const rightGrabbed = rightHand.grabbed && !spatialUIInputOwnership.busy('right')
     const mode: GodScaleGestureMode | null =
-      leftHand.grabbed && rightHand.grabbed
-        ? 'two'
-        : leftHand.grabbed
-          ? 'left'
-          : rightHand.grabbed
-            ? 'right'
-            : null
+      leftGrabbed && rightGrabbed ? 'two' : leftGrabbed ? 'left' : rightGrabbed ? 'right' : null
 
     if (!root || playerMode !== XR_PLAYER_MODES.GOD || !isGodScaleInteractionEnabled(mode)) {
       gesture.current.mode = null

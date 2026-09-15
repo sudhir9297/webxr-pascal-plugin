@@ -35,7 +35,7 @@ import {
   useInteractionScope,
 } from '@pascal-app/editor'
 import { useViewer } from '@pascal-app/viewer'
-import { XR_WAND_PANEL_INPUT_NAME } from '../../../xr/wand'
+import { rayHitsSpatialUI } from '../../../xr/spatial-ui'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useXR } from '@react-three/xr'
 import { type MutableRefObject, useCallback, useEffect, useMemo, useRef } from 'react'
@@ -227,10 +227,7 @@ export function XREditorInputBridge() {
 
   const isWandPanelHit = useCallback(
     (frame: XRFrame, source: XRInputSource): boolean => {
-      const panel = scene.getObjectByName(XR_WAND_PANEL_INPUT_NAME)
-      if (!(panel && updateRay(frame, source))) return false
-      panel.updateWorldMatrix(true, true)
-      return raycaster.current.intersectObject(panel, true).length > 0
+      return updateRay(frame, source) && rayHitsSpatialUI(scene, raycaster.current)
     },
     [scene, updateRay],
   )

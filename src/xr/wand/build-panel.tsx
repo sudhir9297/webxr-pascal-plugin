@@ -7,7 +7,7 @@ import { SpatialText } from './spatial-text'
 import { XR_WAND_THEME } from './theme'
 
 function tilePosition(index: number): [number, number, number] {
-  return [-0.255 + (index % 3) * 0.255, 0.225 - Math.floor(index / 3) * 0.215, 0]
+  return [-0.45 + (index % 4) * 0.3, 0.22 - Math.floor(index / 4) * 0.23, 0]
 }
 
 function PaletteTile({ item, index }: { item: XRWandBuildItem; index: number }) {
@@ -17,7 +17,7 @@ function PaletteTile({ item, index }: { item: XRWandBuildItem; index: number }) 
       onClick={item.onSelect}
       position={tilePosition(index)}
       selected={item.active}
-      size={[0.215, 0.19]}
+      size={[0.255, 0.2]}
     >
       <PanelIcon color={item.icon.color} size={0.092} src={item.icon.src} />
       <SpatialText
@@ -25,7 +25,7 @@ function PaletteTile({ item, index }: { item: XRWandBuildItem; index: number }) 
         anchorY="middle"
         color={XR_WAND_THEME.text}
         fontSize={item.label.length > 12 ? 0.018 : 0.021}
-        maxWidth={0.19}
+        maxWidth={0.23}
         position={[0, -0.067, 0.012]}
         textAlign="center"
       >
@@ -40,12 +40,12 @@ export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
 
   return (
     <group name="xr-wand-build-panel">
-      <PanelHeader mark={model.mark} title={model.title} />
+      <PanelHeader mark={model.mark} title={model.title} width={1.4} />
       {model.back ? (
         <SpatialButton
           name={`xr-build-${model.section}-back`}
           onClick={model.back.onSelect}
-          position={[-0.3, 0.35, 0]}
+          position={[-0.55, 0.35, 0]}
           size={[0.12, 0.055]}
         >
           <SpatialText
@@ -63,7 +63,7 @@ export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
         <PaletteTile item={item} index={index} key={item.id} />
       ))}
       {model.pageCount > 1 ? (
-        <group position={[0.23, 0.35, 0]}>
+        <group position={[0.48, 0.35, 0]}>
           <SpatialButton
             disabled={model.page === 0}
             name={`xr-build-${model.section}-previous-page`}

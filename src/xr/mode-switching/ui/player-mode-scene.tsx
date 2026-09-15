@@ -6,7 +6,6 @@ import {
   useXR,
   useXRInputSourceState,
   useXRInputSourceStateContext,
-  type XRControllerState,
   XRSpace,
 } from '@react-three/xr'
 import {
@@ -20,6 +19,7 @@ import {
 } from 'react'
 import { Euler, type Group, type Object3D, Vector3 } from 'three'
 import { DistanceAwareRayPointer } from '../../distance-aware-ray-pointer'
+import { isQuestXPressed } from '../../controller-buttons'
 import { GOD_ORIGIN_POSITION, GOD_ORIGIN_ROTATION } from '../../god-mode'
 import { GodModeHandControls } from '../../god-mode/input/god-mode-hand-controls'
 import { GodModeControls } from '../../god-mode/ui/god-mode-controls'
@@ -174,17 +174,12 @@ function PlayerModeHandToggle({ disabled = false }: { disabled?: boolean }) {
   return null
 }
 
-function isModeButtonPressed(controller: XRControllerState | undefined) {
-  if (controller?.gamepad?.['y-button']?.state === 'pressed') return true
-  return controller?.inputSource.gamepad?.buttons[5]?.pressed === true
-}
-
 function PlayerModeControllerToggle() {
   const leftController = useXRInputSourceState('controller', 'left')
   const pressed = useRef(false)
 
   useFrame(() => {
-    const nextPressed = isModeButtonPressed(leftController)
+    const nextPressed = isQuestXPressed(leftController)
     if (!pressed.current && nextPressed) {
       useXRPlayerMode.getState().toggle()
       pulseInputSource(leftController?.inputSource, 0.25, 35)
@@ -263,11 +258,13 @@ export function PlayerModeScene({
   inputSourceOverlay,
   layers = DEFAULT_WEBXR_SCENE_LAYERS,
   store,
+  uiContent,
 }: {
   children: ReactNode
   inputSourceOverlay?: InputSourceOverlay
   layers?: WebXRSceneLayers
   store: WebXRStore
+  uiContent?: ReactNode
 }) {
   const sceneRootRef = useRef<Group | null>(null)
   const HandInput = useMemo(
@@ -294,10 +291,11 @@ export function PlayerModeScene({
   return (
     <WebXRSceneLayersProvider layers={layers}>
       <PlayerModeControllerToggle />
-      <PlayerModeHandToggle disabled={inputSourceOverlay != null} />
+      <PlayerModeHandToggle disabled={inputSourceOverlay != null || uiContent != null} />
       <PlayerModeRig sceneRootRef={sceneRootRef} />
       <GodModeControls sceneRootRef={sceneRootRef} />
       <HumanModeControls sceneRootRef={sceneRootRef} />
+      {uiContent}
       <group name="xr-player-scene-root" ref={sceneRootRef}>
         {children}
       </group>

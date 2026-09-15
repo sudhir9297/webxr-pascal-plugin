@@ -27,6 +27,7 @@ export { shapeLinePoints, SpatialLine } from './spatial-line'
 export { SpatialText } from './spatial-text'
 export { XR_WAND_THEME } from './theme'
 export { XRWandInputOverlay } from './wand-input-overlay'
+export { XRFloatingWorkspace } from './floating-workspace'
 export { XRWandPanel } from './wand-panel'
 export { XRWandPanelShell } from './wand-panel-shell'
 export type {

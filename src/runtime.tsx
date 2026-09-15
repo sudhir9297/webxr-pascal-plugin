@@ -17,6 +17,7 @@ export type XRRuntimeSource = 'native' | 'emulated' | 'unsupported'
 type RuntimeStatus = 'idle' | 'entering' | 'active' | 'error'
 
 type EmulatedDevice = XRDevice & {
+  appCanvas?: HTMLCanvasElement
   canvasContainer: HTMLDivElement
   devui?: {
     devUICanvas: HTMLCanvasElement
@@ -132,6 +133,13 @@ export function mountEmulatorControls(): () => void {
   if (!(device && devui)) return () => undefined
 
   const host = device.canvasContainer
+  Object.assign(host.style, {
+    background: '#101010',
+    display: 'block',
+    height: '100vh',
+    inset: '0',
+    width: '100vw',
+  })
   const mountedHost = !host.isConnected
   const mountedCanvas = !devui.devUICanvas.isConnected
   const mountedControls = !devui.devUIContainer.isConnected
@@ -140,7 +148,33 @@ export function mountEmulatorControls(): () => void {
   if (mountedControls) host.appendChild(devui.devUIContainer)
   if (mountedHost) document.body.appendChild(host)
 
+  // IWER reparents the renderer canvas into its fullscreen host, but preserves
+  // the CSS pixel size assigned by the editor's viewer pane. Stretch only the
+  // application canvas so its stereo image fills the emulated headset viewport.
+  let appCanvas: HTMLCanvasElement | undefined
+  let previousCanvasStyle: string | null = null
+  const fillViewport = () => {
+    const nextCanvas = device.appCanvas
+    if (!nextCanvas || nextCanvas === appCanvas) return
+    appCanvas = nextCanvas
+    previousCanvasStyle = appCanvas.getAttribute('style')
+    Object.assign(appCanvas.style, {
+      height: '100vh',
+      inset: '0',
+      position: 'absolute',
+      width: '100vw',
+    })
+  }
+  fillViewport()
+  const canvasObserver = new MutationObserver(fillViewport)
+  canvasObserver.observe(host, { childList: true })
+
   return () => {
+    canvasObserver.disconnect()
+    if (appCanvas) {
+      if (previousCanvasStyle === null) appCanvas.removeAttribute('style')
+      else appCanvas.setAttribute('style', previousCanvasStyle)
+    }
     if (mountedCanvas && devui.devUICanvas.parentElement === host) devui.devUICanvas.remove()
     if (mountedControls && devui.devUIContainer.parentElement === host) {
       devui.devUIContainer.remove()
