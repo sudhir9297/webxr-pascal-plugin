@@ -27,6 +27,11 @@ import { useXRWorkspace } from './workspace-store'
 type PointerDownEvent = ThreeEvent<PointerEvent>
 type WorkspaceTab = 'paint' | 'build' | 'settings'
 const TABS = ['paint', 'build', 'settings'] as const
+// Keep the first control visually aligned with the top of the 1.04 m rail.
+const RAIL_TOP = 0.49
+const RAIL_ITEM_GAP = 0.03
+const RAIL_ITEM_HEIGHT = 0.105
+const DRAG_AREA_Y = -0.64
 
 function RailButton({
   iconSrc,
@@ -219,14 +224,14 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
           {tab === 'build' && <XRWandBuildPanel adapter={adapter} />}
           {tab === 'settings' && <XRWandSettingsPanel adapter={adapter} />}
         </group>
-        <group name="xr-workspace-tool-rail" position={[-0.79, 0.04, 0]}>
-          <PanelFace width={0.16} height={0.7} />
+        <group name="xr-workspace-tool-rail" position={[-0.8, 0, 0]}>
+          <PanelFace width={0.16} height={1.04} />
           {TABS.map((value, index) => (
             <RailButton
               key={value}
               iconSrc={`/icons/${value}.webp`}
               name={`xr-workspace-tab-${value}`}
-              y={0.2 - index * 0.125}
+              y={RAIL_TOP - RAIL_ITEM_HEIGHT / 2 - index * (RAIL_ITEM_HEIGHT + RAIL_ITEM_GAP)}
               selected={tab === value}
               onClick={() => setTab(value)}
             />
@@ -234,19 +239,15 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
           <RailButton
             iconSrc="/icons/orbit.webp"
             name="xr-workspace-recenter"
-            y={-0.22}
+            y={-0.43}
             onClick={() => useXRWorkspace.getState().recall()}
           />
         </group>
-        <mesh layers={overlay} position={[-0.18, -0.535, 0]} raycast={() => null}>
-          <sphereGeometry args={[0.022, 16, 10]} />
-          <meshBasicMaterial color={XR_WAND_THEME.muted} />
-        </mesh>
         <mesh
           ref={handle}
           name="xr-workspace-drag-handle"
           layers={overlay}
-          position={[0.075, -0.535, 0]}
+          position={[-0.09, DRAG_AREA_Y, 0]}
           onPointerDown={startDrag}
           onPointerMove={moveDrag}
           onPointerUp={finishDrag}
@@ -257,7 +258,7 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
           <meshBasicMaterial depthWrite={false} opacity={0} transparent />
           <mesh rotation={[0, 0, Math.PI / 2]} raycast={() => null}>
             <capsuleGeometry args={[0.022, 0.36, 6, 16]} />
-            <meshBasicMaterial color={dragging ? XR_WAND_THEME.accent : XR_WAND_THEME.border} />
+            <meshBasicMaterial color="#ffffff" />
           </mesh>
         </mesh>
       </group>

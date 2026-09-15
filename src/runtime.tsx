@@ -3,7 +3,7 @@
 import { useScene } from '@pascal-app/core'
 import { createXRStore, type XRStore, type XRStoreOptions } from '@react-three/xr'
 import type { XRDevice } from 'iwer'
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { GOD_ORIGIN_POSITION } from './xr/god-mode'
 import { VisibleXRController, VisibleXRHand } from './xr/input-visuals'
 import { PlayerModeScene } from './xr/mode-switching'
@@ -98,6 +98,32 @@ export function getEmulatedXRDevice(): XRDevice | undefined {
   return (globalThis as RuntimeGlobal).__webXRPluginDevice
 }
 
+export function mountEmulatedViewerOverlay(): () => void {
+  const viewer = document.querySelector<HTMLElement>('[data-pascal-viewer-3d]')
+  if (!viewer) return () => undefined
+  const previousStyle = viewer.getAttribute('style')
+  Object.assign(viewer.style, {
+    display: 'block',
+    height: '100vh',
+    inset: '0',
+    position: 'fixed',
+    width: '100vw',
+    zIndex: '998',
+  })
+  window.dispatchEvent(new Event('resize'))
+  return () => {
+    if (previousStyle === null) viewer.removeAttribute('style')
+    else viewer.setAttribute('style', previousStyle)
+    window.dispatchEvent(new Event('resize'))
+  }
+}
+
+export function waitForViewerResize(): Promise<void> {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  )
+}
+
 export function prepareXRPlatform(): Promise<XRRuntimeSource> {
   const runtimeGlobal = globalThis as RuntimeGlobal
   runtimeGlobal.__webXRPluginSetup ??= setupXRPlatform().catch((error: unknown) => {
@@ -134,7 +160,6 @@ export function mountEmulatorControls(): () => void {
 
   const host = device.canvasContainer
   Object.assign(host.style, {
-    background: '#101010',
     display: 'block',
     height: '100vh',
     inset: '0',
@@ -265,6 +290,7 @@ export function useWebXRFeature(createStore: WebXRStoreFactory = createWebXRStor
   const [source, setSource] = useState<Exclude<XRRuntimeSource, 'unsupported'>>()
   const [status, setStatus] = useState<RuntimeStatus>('idle')
   const [error, setError] = useState<string | null>(null)
+  const restoreViewer = useRef<(() => void) | null>(null)
   const inputSourceStates = useSyncExternalStore(
     store.subscribe,
     () => store.getState().inputSourceStates,
@@ -284,6 +310,8 @@ export function useWebXRFeature(createStore: WebXRStoreFactory = createWebXRStor
   useEffect(() => {
     if (!session) return
     const ended = () => {
+      restoreViewer.current?.()
+      restoreViewer.current = null
       setSession(undefined)
       setStatus('idle')
     }
@@ -306,6 +334,11 @@ export function useWebXRFeature(createStore: WebXRStoreFactory = createWebXRStor
         throw new Error('Immersive VR is unavailable. Connect a headset and enable WebXR.')
       }
       const nextSession = await requestWebXRSession(store)
+      if (runtimeSource === 'emulated') {
+        const restore = mountEmulatedViewerOverlay()
+        restoreViewer.current = restore
+        await waitForViewerResize()
+      }
       setSource(runtimeSource)
       setSession(nextSession)
       setStatus('active')

@@ -142,7 +142,6 @@ function XRSessionBinding({
         // surface as well as its CSS box so neither eye retains that old pane.
         const resize = () => {
           renderer.setSize(window.innerWidth, window.innerHeight, false)
-          rootStore.getState().setSize(window.innerWidth, window.innerHeight)
         }
         resize()
         window.addEventListener('resize', resize)

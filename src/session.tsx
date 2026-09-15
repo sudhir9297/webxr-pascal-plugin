@@ -2,7 +2,13 @@
 
 import type { ComponentType, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { mountEmulatorControls, requestWebXRSession, useWebXRRuntime } from './runtime'
+import {
+  mountEmulatedViewerOverlay,
+  mountEmulatorControls,
+  requestWebXRSession,
+  useWebXRRuntime,
+  waitForViewerResize,
+} from './runtime'
 import type { WebXRStore } from './runtime'
 import { GOD_ORIGIN_POSITION, GOD_ORIGIN_ROTATION } from './xr/god-mode'
 import type { WebXRSceneLayers } from './xr/layers'
@@ -59,6 +65,7 @@ export function useWebXRSession() {
   const activeSession = useRef<XRSession | undefined>(undefined)
   const pending = useRef(false)
   const lifetime = useRef<object | null>(null)
+  const restoreViewer = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     lifetime.current = {}
@@ -67,6 +74,8 @@ export function useWebXRSession() {
       const active = activeSession.current
       activeSession.current = undefined
       if (active) void active.end().catch(() => undefined)
+      restoreViewer.current?.()
+      restoreViewer.current = null
     }
   }, [])
 
@@ -91,11 +100,17 @@ export function useWebXRSession() {
         return
       }
       activeSession.current = next
+      if (runtime.source === 'emulated') {
+        restoreViewer.current = mountEmulatedViewerOverlay()
+        await waitForViewerResize()
+      }
       next.addEventListener(
         'end',
         () => {
           if (activeSession.current !== next) return
           activeSession.current = undefined
+          restoreViewer.current?.()
+          restoreViewer.current = null
           setSession(undefined)
         },
         { once: true },

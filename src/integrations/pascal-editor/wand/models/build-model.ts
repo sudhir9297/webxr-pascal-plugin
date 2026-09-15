@@ -11,7 +11,9 @@ import {
 import { useMemo } from 'react'
 import type { PascalXRRoofFeature, PascalXRWandBindings } from '../bindings'
 
-const ITEMS_PER_PAGE = 9
+// The build palette is a 4x3 grid. Keep the page size in sync with the
+// available tile slots so the first page shows every slot before paginating.
+const ITEMS_PER_PAGE = 12
 
 export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWandBuildModel {
   const section = useXRWandPanelSettings((state) => state.buildSection)
