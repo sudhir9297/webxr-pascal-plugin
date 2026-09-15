@@ -17,6 +17,9 @@ export const handLocomotionJoystickStore = createStore<Record<Handedness, HandJo
 )
 
 export function showHandLocomotionJoystick(position: Vector3, handedness: Handedness) {
+  const current = handLocomotionJoystickStore.getState()[handedness]
+  if (current.active && current.state === 'active' &&
+      current.position[0] === position.x && current.position[1] === position.y && current.position[2] === position.z) return
   handLocomotionJoystickStore.setState((state) => ({
     ...state,
     [handedness]: {
@@ -35,6 +38,8 @@ export function hideHandLocomotionJoystick(handedness?: Handedness) {
     })
     return
   }
+  const current = handLocomotionJoystickStore.getState()[handedness]
+  if (!current.active && current.state === 'idle') return
   handLocomotionJoystickStore.setState((state) => ({
     ...state,
     [handedness]: { ...state[handedness], active: false, state: 'idle' },
@@ -46,15 +51,19 @@ export function setHandLocomotionState(
   stateName: HandStateName,
   position?: Vector3,
 ) {
+  const current = handLocomotionJoystickStore.getState()[handedness]
+  const nextPosition = position
+    ? [position.x, position.y, position.z] as [number, number, number]
+    : current.position
+  if (current.state === stateName && current.active === (stateName === 'active') &&
+      current.position[0] === nextPosition[0] && current.position[1] === nextPosition[1] && current.position[2] === nextPosition[2]) return
   handLocomotionJoystickStore.setState((state) => ({
     ...state,
     [handedness]: {
       ...state[handedness],
       active: stateName === 'active',
       state: stateName,
-      ...(position
-        ? { position: [position.x, position.y, position.z] as [number, number, number] }
-        : {}),
+      position: nextPosition,
     },
   }))
 }

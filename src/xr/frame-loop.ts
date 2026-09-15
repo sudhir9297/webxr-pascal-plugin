@@ -8,6 +8,29 @@ export type XRFrameLoopRenderer = {
   }
 }
 
+export type XRQualityPreset = 'performance' | 'balanced' | 'quality'
+
+export const XR_QUALITY_PRESETS: Record<XRQualityPreset, { framebufferScaleFactor: number; foveation: number }> = {
+  performance: { framebufferScaleFactor: 0.7, foveation: 1 },
+  balanced: { framebufferScaleFactor: 0.85, foveation: 0.8 },
+  quality: { framebufferScaleFactor: 1, foveation: 0.5 },
+}
+
+export function configureXRQuality(
+  renderer: XRFrameLoopRenderer & { xr: XRFrameLoopRenderer['xr'] & { setFramebufferScaleFactor?: (factor: number) => void; setFoveation?: (value: number) => void } },
+  preset: XRQualityPreset,
+) {
+  const settings = XR_QUALITY_PRESETS[preset]
+  try {
+    // Three only accepts this before session creation. Hosts that configure it
+    // earlier still benefit; the runtime keeps the preset safe for active sessions.
+    renderer.xr.setFramebufferScaleFactor?.(settings.framebufferScaleFactor)
+  } catch {
+    // The session is already active in the plugin's viewer integration.
+  }
+  renderer.xr.setFoveation?.(settings.foveation)
+}
+
 type XRViewport = {
   dpr: number
   height: number

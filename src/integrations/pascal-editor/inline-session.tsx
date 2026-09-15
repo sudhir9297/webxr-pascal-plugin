@@ -11,10 +11,14 @@ import { XRFloatingWorkspace } from '../../xr/wand'
 import { XREditorInputBridge } from './input/editor-input-bridge'
 import { XREmulatorTestHarnessBridge } from './testing/emulator-test-harness'
 import type { PascalXRWandBindings } from './wand/bindings'
+import type { XRQualityPreset } from '../../xr/frame-loop'
 import { createPascalXRWandAdapter } from './wand/create-adapter'
 
-export function usePascalWebXR(bindings: PascalXRWandBindings) {
-  const feature = useWebXRSession()
+export function usePascalWebXR(
+  bindings: PascalXRWandBindings,
+  qualityPreset: XRQualityPreset = 'balanced',
+) {
+  const feature = useWebXRSession(qualityPreset)
   const { session, runtime, fail } = feature
 
   useEffect(() => {
@@ -62,8 +66,9 @@ export function usePascalWebXR(bindings: PascalXRWandBindings) {
       { batched: BATCHED_LAYER, overlay: OVERLAY_LAYER, zone: ZONE_LAYER },
       fail,
       <XRFloatingWorkspace adapter={adapter} />,
+      qualityPreset,
     )
-  }, [bindings, fail, runtime, session])
+  }, [bindings, fail, qualityPreset, runtime, session])
 
   return { ...feature, immersive }
 }

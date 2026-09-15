@@ -26,6 +26,7 @@ export function SpatialLine({
   transparent?: boolean
 }) {
   const { overlay } = useWebXRSceneLayers()
+  const pointKey = points.map((point) => point.join(',')).join(';')
   const line = useMemo(
     () =>
       new ThreeLine(
@@ -37,7 +38,7 @@ export function SpatialLine({
           transparent: transparent || opacity < 1,
         }),
       ),
-    [color, lineWidth, opacity, points, transparent],
+    [color, lineWidth, opacity, pointKey, transparent],
   )
 
   useEffect(

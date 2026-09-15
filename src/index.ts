@@ -1,4 +1,5 @@
 export { useWebXRSession, createWebXRViewerSession } from './session'
+export { XR_QUALITY_PRESETS, type XRQualityPreset } from './xr/frame-loop'
 import type { Plugin } from '@pascal-app/core'
 import type { ComponentType } from 'react'
 import { WEBXR_PLUGIN_ID } from './runtime'

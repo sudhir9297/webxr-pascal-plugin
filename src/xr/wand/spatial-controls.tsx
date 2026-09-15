@@ -62,7 +62,7 @@ export function SpatialButton({
   const [hovered, setHovered] = useState(false)
   const [pressed, setPressed] = useState(false)
   const hoverLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const shape = useMemo(() => roundedShape(size[0], size[1]), [size])
+  const shape = useMemo(() => roundedShape(size[0], size[1]), [size[0], size[1]])
   const points = useMemo(() => shapeLinePoints(shape), [shape])
 
   useEffect(

@@ -14,6 +14,7 @@ import { GOD_ORIGIN_POSITION, GOD_ORIGIN_ROTATION } from './xr/god-mode'
 import type { WebXRSceneLayers } from './xr/layers'
 import { PlayerModeScene } from './xr/mode-switching'
 import { WebXRSessionRoot } from './xr/session-root'
+import type { XRQualityPreset } from './xr/frame-loop'
 
 type WrapperProps = { children: ReactNode }
 
@@ -25,6 +26,7 @@ export function createWebXRViewerSession(
   layers?: WebXRSceneLayers,
   onError?: (cause: unknown) => void,
   uiContent?: ReactNode,
+  qualityPreset: XRQualityPreset = 'balanced',
 ) {
   return {
     onError,
@@ -36,6 +38,7 @@ export function createWebXRViewerSession(
           originRotation={[GOD_ORIGIN_ROTATION.x, GOD_ORIGIN_ROTATION.y, GOD_ORIGIN_ROTATION.z]}
           session={session}
           store={store}
+          qualityPreset={qualityPreset}
         >
           {children}
         </WebXRSessionRoot>
@@ -57,7 +60,7 @@ export function createWebXRViewerSession(
   }
 }
 
-export function useWebXRSession() {
+export function useWebXRSession(qualityPreset: XRQualityPreset = 'balanced') {
   const runtime = useWebXRRuntime(true)
   const [session, setSession] = useState<XRSession>()
   const [entering, setEntering] = useState(false)
@@ -142,9 +145,9 @@ export function useWebXRSession() {
   const immersive = useMemo(
     () =>
       runtime.status === 'ready' && session
-        ? createWebXRViewerSession(runtime.store, session, undefined, undefined, undefined, fail)
+        ? createWebXRViewerSession(runtime.store, session, undefined, undefined, undefined, fail, undefined, qualityPreset)
         : undefined,
-    [fail, runtime, session],
+    [fail, qualityPreset, runtime, session],
   )
 
   return {

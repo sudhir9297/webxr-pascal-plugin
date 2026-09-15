@@ -187,6 +187,8 @@ export function XREditorInputBridge() {
   const rayOrigin = useRef(new Vector3())
   const rayDirection = useRef(new Vector3())
   const rayRotation = useRef(new Quaternion())
+  const rayFrame = useRef<XRFrame | null>(null)
+  const raySource = useRef<XRInputSource | null>(null)
   const gridPlane = useRef(new Plane())
   const gridPlaneNormal = useRef(new Vector3())
   const gridPlanePoint = useRef(new Vector3())
@@ -208,6 +210,7 @@ export function XREditorInputBridge() {
 
   const updateRay = useCallback(
     (frame: XRFrame, source: XRInputSource): boolean => {
+      if (rayFrame.current === frame && raySource.current === source) return true
       const referenceSpace = gl.xr.getReferenceSpace()
       if (!referenceSpace) return false
       const pose = frame.getPose(source.targetRaySpace, referenceSpace)
@@ -220,6 +223,8 @@ export function XREditorInputBridge() {
       applyXRReferenceSpaceRayToWorld(rayOrigin.current, rayDirection.current, origin.matrixWorld)
       raycaster.current.ray.set(rayOrigin.current, rayDirection.current)
       raycaster.current.layers.enableAll()
+      rayFrame.current = frame
+      raySource.current = source
       return true
     },
     [gl, origin],

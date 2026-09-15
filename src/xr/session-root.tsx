@@ -7,12 +7,14 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import {
   advanceXRFrameWithoutDesktopRender,
+  configureXRQuality,
   createXRFrameClock,
   ownsXRFrameLoopBinding,
   renderImmersiveXRFrame,
   stopXRFrameLoop,
   takeOverXRFrameLoop,
   type XRFrameLoopRenderer,
+  type XRQualityPreset,
 } from './frame-loop'
 
 function configureWebGLXRBaseLayer(manager: { [key: string]: unknown }) {
@@ -39,10 +41,12 @@ function XRSessionBinding({
   session,
   store,
   onError,
+  qualityPreset,
 }: {
   session?: XRSession
   store: XRStore
   onError?: (cause: unknown) => void
+  qualityPreset?: XRQualityPreset
 }) {
   const renderer = useThree((state) => state.gl)
   const r3fXR = useThree((state) => state.xr)
@@ -64,6 +68,7 @@ function XRSessionBinding({
     activeBinding.current = binding
     const state = rootStore.getState()
     const baseCamera = state.camera
+    configureXRQuality(renderer as never, qualityPreset ?? 'balanced')
     const frameClock = createXRFrameClock(state.clock.elapsedTime)
 
     let failed = false
@@ -189,7 +194,7 @@ function XRSessionBinding({
       removeEmulatorResize?.()
       if (ownsXRFrameLoopBinding(activeBinding.current, binding)) restoreFrameLoop?.()
     }
-  }, [onError, renderer, r3fXR, rootStore, session, store])
+  }, [onError, qualityPreset, renderer, r3fXR, rootStore, session, store])
 
   return null
 }
@@ -201,6 +206,7 @@ export type WebXRSessionRootProps = {
   originRotation?: [number, number, number]
   session?: XRSession
   store: XRStore
+  qualityPreset?: XRQualityPreset
 }
 
 export function WebXRSessionRoot({
@@ -210,11 +216,12 @@ export function WebXRSessionRoot({
   originRotation,
   session,
   store,
+  qualityPreset,
 }: WebXRSessionRootProps) {
   return (
     <XR store={store}>
       <XROrigin position={originPosition} rotation={originRotation} />
-      <XRSessionBinding onError={onError} session={session} store={store} />
+      <XRSessionBinding onError={onError} qualityPreset={qualityPreset} session={session} store={store} />
       {children}
     </XR>
   )

@@ -25,6 +25,11 @@ const desiredPosition = new Vector3()
 const stepMovement = new Vector3()
 const roomMovement = new Vector3()
 const resolvedRoomMovement = new Vector3()
+const colliderSphereCenter = new Vector3()
+const colliderSphereScale = new Vector3()
+const colliderClosestPoint = new Vector3()
+const colliderWorldQuaternion = new Quaternion()
+const colliderSegment = new Line3(new Vector3(), new Vector3())
 
 type BvhGeometry = Mesh['geometry'] & {
   boundsTree?: {
@@ -85,6 +90,24 @@ function resolveColliderPenetration(collider: Mesh, eyePosition: Vector3) {
   return correction.copy(resolvedWorldStart).sub(desiredWorldStart)
 }
 
+function colliderMayIntersectMovement(collider: Mesh, start: Vector3, end: Vector3) {
+  const geometry = collider.geometry
+  const sphere = geometry.boundingSphere
+  if (!sphere) return true
+  collider.updateWorldMatrix(true, false)
+  collider.matrixWorld.decompose(colliderSphereCenter, colliderWorldQuaternion, colliderSphereScale)
+  colliderSphereCenter.copy(sphere.center).applyMatrix4(collider.matrixWorld)
+  const radius = sphere.radius * Math.max(
+    Math.abs(colliderSphereScale.x),
+    Math.abs(colliderSphereScale.y),
+    Math.abs(colliderSphereScale.z),
+  ) + CAPSULE_RADIUS
+  colliderSegment.start.copy(start)
+  colliderSegment.end.copy(end)
+  colliderSegment.closestPointToPoint(colliderSphereCenter, true, colliderClosestPoint)
+  return colliderClosestPoint.distanceToSquared(colliderSphereCenter) <= radius * radius
+}
+
 export function resolveCapsuleTranslation(
   colliders: readonly Mesh[],
   playerPosition: Vector3,
@@ -100,6 +123,7 @@ export function resolveCapsuleTranslation(
   for (let step = 0; step < steps; step += 1) {
     desiredPosition.copy(currentPosition).add(stepMovement)
     for (const collider of colliders) {
+      if (!colliderMayIntersectMovement(collider, currentPosition, desiredPosition)) continue
       desiredPosition.add(resolveColliderPenetration(collider, desiredPosition))
     }
     currentPosition.copy(desiredPosition)
