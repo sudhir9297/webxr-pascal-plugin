@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
   advanceXRFrameWithoutDesktopRender,
+  createXRFrameClock,
   ownsXRFrameLoopBinding,
   renderImmersiveXRFrame,
   shouldMountPostProcessingRenderDriver,
@@ -190,4 +191,11 @@ describe('takeOverXRFrameLoop', () => {
     expect(setAnimationLoop).toHaveBeenLastCalledWith(null)
     expect(renderer.xr.enabled).toBe(false)
   })
+})
+
+test('XR timestamps advance locomotion in seconds without browser uptime on entry', () => {
+  const clock = createXRFrameClock(2)
+  expect(clock(500_000)).toBe(2)
+  expect(clock(500_011)).toBeCloseTo(2.011)
+  expect(clock(500_022) - clock(500_011)).toBeCloseTo(0.011)
 })

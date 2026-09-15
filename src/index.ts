@@ -1,3 +1,4 @@
+export { useWebXRSession, createWebXRViewerSession } from './session'
 import type { Plugin } from '@pascal-app/core'
 import type { ComponentType } from 'react'
 import { WEBXR_PLUGIN_ID } from './runtime'
@@ -24,12 +25,6 @@ export {
   type WebXRViewerConfig,
   type XRRuntimeSource,
 } from './runtime'
-export {
-  createXRPreviewSceneSnapshot,
-  openXRPreview,
-  XR_PREVIEW_SCENE_KEY,
-  type WebXRPreviewSceneSnapshot,
-} from './preview'
 export { WebXRToolbarButton } from './toolbar-button'
 export {
   GOD_ORIGIN_POSITION,

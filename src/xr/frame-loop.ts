@@ -133,3 +133,12 @@ export function stopXRFrameLoop(renderer: XRFrameLoopRenderer) {
   renderer.xr.enabled = false
   void renderer.setAnimationLoop(null)
 }
+
+/** Convert XR milliseconds to R3F's elapsed seconds without a first-frame jump. */
+export function createXRFrameClock(initialElapsedSeconds: number) {
+  let firstTimestamp: number | undefined
+  return (timestamp: number) => {
+    firstTimestamp ??= timestamp
+    return initialElapsedSeconds + (timestamp - firstTimestamp) / 1000
+  }
+}

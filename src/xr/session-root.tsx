@@ -1,11 +1,13 @@
 'use client'
 
+import { supportEmulatedDefaultFramebuffer } from './emulated-framebuffer'
 import { advance, useStore, useThree } from '@react-three/fiber'
 import { XR, XROrigin, type XRStore } from '@react-three/xr'
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import {
   advanceXRFrameWithoutDesktopRender,
+  createXRFrameClock,
   ownsXRFrameLoopBinding,
   renderImmersiveXRFrame,
   stopXRFrameLoop,
@@ -20,7 +22,7 @@ function configureWebGLXRBaseLayer(manager: { [key: string]: unknown }) {
   if ('_supportsLayers' in manager) manager._supportsLayers = false
 }
 
-export const WEBXR_CAMERA_NEAR = 0.001
+export const WEBXR_CAMERA_NEAR = 0.1
 export const WEBXR_CAMERA_FAR = 10_000
 
 function applyWebXRCameraClipping(camera: {
@@ -33,7 +35,15 @@ function applyWebXRCameraClipping(camera: {
   camera.updateProjectionMatrix()
 }
 
-function XRSessionBinding({ session, store }: { session?: XRSession; store: XRStore }) {
+function XRSessionBinding({
+  session,
+  store,
+  onError,
+}: {
+  session?: XRSession
+  store: XRStore
+  onError?: (cause: unknown) => void
+}) {
   const renderer = useThree((state) => state.gl)
   const r3fXR = useThree((state) => state.xr)
   const rootStore = useStore()
@@ -44,13 +54,25 @@ function XRSessionBinding({ session, store }: { session?: XRSession; store: XRSt
     if (!session) return
 
     let cancelled = false
+    let attached = false
     let restoreFrameLoop: (() => void) | undefined
     let resyncInputsOnNextFrame = false
+    let restoreDrawBuffers: (() => void) | undefined
+
     const binding = Symbol('xr-session-binding')
     activeBinding.current = binding
     const state = rootStore.getState()
     const baseCamera = state.camera
+    const frameClock = createXRFrameClock(state.clock.elapsedTime)
 
+    let failed = false
+    const fail = (error: unknown) => {
+      if (cancelled || failed) return
+      failed = true
+      console.error('[webxr-plugin] Could not render the WebXR session', error)
+      onError?.(error)
+      void session.end().catch(() => undefined)
+    }
     const attachSession = async () => {
       // Attach the session before starting the renderer-owned loop. IWER
       // publishes input sources on its first frame; starting the loop first
@@ -62,26 +84,36 @@ function XRSessionBinding({ session, store }: { session?: XRSession; store: XRSt
         renderer as unknown as XRFrameLoopRenderer,
         r3fXR,
         (time, frame) => {
-          if (!frame) return
-          if (resyncInputsOnNextFrame) {
-            resyncInputsOnNextFrame = false
-            const xrState = store.getState()
-            if (
-              xrState.session !== session ||
-              (xrState.inputSourceStates.length === 0 && session.inputSources.length > 0)
-            ) {
-              // IWER publishes its initial controllers on the first immersive
-              // frame. Rebinding here lets the XR store consume the current
-              // session.inputSources even when that first change event raced
-              // the renderer's sessionstart event.
-              manager.dispatchEvent({ type: 'sessionstart' })
+          if (!frame || !attached || cancelled || failed) return
+          try {
+            if (resyncInputsOnNextFrame) {
+              resyncInputsOnNextFrame = false
+              const xrState = store.getState()
+              if (
+                xrState.session !== session ||
+                (xrState.inputSourceStates.length === 0 && session.inputSources.length > 0)
+              ) {
+                // IWER publishes its initial controllers on the first immersive
+                // frame. Rebinding here lets the XR store consume the current
+                // session.inputSources even when that first change event raced
+                // the renderer's sessionstart event.
+                manager.dispatchEvent({ type: 'sessionstart' })
+              }
             }
+            // A host camera's makeDefault effect may run after XR's session
+            // subscription. Keep frame subscribers on the tracked stereo camera.
+            if (rootStore.getState().camera !== manager.getCamera()) {
+              rootStore.setState({ camera: manager.getCamera() })
+            }
+            const frameState = rootStore.getState()
+            advanceXRFrameWithoutDesktopRender(frameState, () => {
+              // R3F's manual clock takes seconds, XR supplies milliseconds.
+              advance(frameClock(time), true, frameState, frame)
+            })
+            renderImmersiveXRFrame(renderer, frameState.scene, baseCamera)
+          } catch (error) {
+            fail(error)
           }
-          const frameState = rootStore.getState()
-          advanceXRFrameWithoutDesktopRender(frameState, () => {
-            advance(time, true, frameState, frame)
-          })
-          renderImmersiveXRFrame(renderer, frameState.scene, baseCamera)
         },
         {
           dpr: state.viewport.dpr,
@@ -99,11 +131,28 @@ function XRSessionBinding({ session, store }: { session?: XRSession; store: XRSt
       }
 
       if (manager.getSession() !== session) await manager.setSession(session)
+      if (cancelled) {
+        if (ownsXRFrameLoopBinding(activeBinding.current, binding)) restore()
+        return
+      }
       session.addEventListener(
         'end',
         () => stopXRFrameLoop(renderer as unknown as XRFrameLoopRenderer),
         { once: true },
       )
+      const baseLayer = manager.getBaseLayer() as XRWebGLLayer | undefined
+      const backend = (
+        renderer as unknown as {
+          backend?: { state?: Parameters<typeof supportEmulatedDefaultFramebuffer>[0] }
+        }
+      ).backend
+      if (baseLayer?.framebuffer === null && backend?.state) {
+        restoreDrawBuffers = supportEmulatedDefaultFramebuffer(backend.state)
+      }
+      // updateCamera copies clipping from the application camera every frame.
+      // Setting only the XR camera is overwritten on the first render. A 1mm
+      // near plane loses the depth precision needed to separate ground surfaces.
+      applyWebXRCameraClipping(baseCamera as Parameters<typeof applyWebXRCameraClipping>[0])
       applyWebXRCameraClipping(manager.getCamera())
       session.updateRenderState({
         baseLayer: manager.getBaseLayer() as XRWebGLLayer | undefined,
@@ -117,44 +166,42 @@ function XRSessionBinding({ session, store }: { session?: XRSession; store: XRSt
         manager.dispatchEvent({ type: 'sessionstart' })
       }
       resyncInputsOnNextFrame = true
-
-      if (cancelled) {
-        restore()
-        return
-      }
+      attached = true
     }
 
-    void attachSession().catch((error: unknown) => {
-      console.error('[webxr-plugin] Could not attach the WebXR session', error)
-      void session.end().catch(() => undefined)
-    })
+    void attachSession().catch(fail)
 
     return () => {
       cancelled = true
+      restoreDrawBuffers?.()
       if (ownsXRFrameLoopBinding(activeBinding.current, binding)) restoreFrameLoop?.()
     }
-  }, [renderer, r3fXR, rootStore, session, store])
+  }, [onError, renderer, r3fXR, rootStore, session, store])
 
   return null
 }
 
 export type WebXRSessionRootProps = {
   children: ReactNode
+  onError?: (cause: unknown) => void
   originPosition?: [number, number, number]
+  originRotation?: [number, number, number]
   session?: XRSession
   store: XRStore
 }
 
 export function WebXRSessionRoot({
   children,
+  onError,
   originPosition,
+  originRotation,
   session,
   store,
 }: WebXRSessionRootProps) {
   return (
     <XR store={store}>
-      <XROrigin position={originPosition} />
-      <XRSessionBinding session={session} store={store} />
+      <XROrigin position={originPosition} rotation={originRotation} />
+      <XRSessionBinding onError={onError} session={session} store={store} />
       {children}
     </XR>
   )

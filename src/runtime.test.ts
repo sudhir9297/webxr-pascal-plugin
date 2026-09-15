@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { DefaultXRController, DefaultXRHand } from '@react-three/xr'
 import {
   createWebXRStore,
+  requestWebXRSession,
   resolveRuntimeSource,
   VisibleXRController,
   VisibleXRHand,
@@ -31,4 +32,35 @@ describe('WebXR tracked input models', () => {
 
     store.destroy()
   })
+})
+
+test('requests native VR immediately with local-floor and tracked hands', async () => {
+  const previous = Object.getOwnPropertyDescriptor(navigator, 'xr')
+  let requested = false
+  let mode: string | undefined
+  let options: XRSessionInit | undefined
+  const session = {} as XRSession
+  Object.defineProperty(navigator, 'xr', {
+    configurable: true,
+    value: {
+      requestSession(nextMode: string, nextOptions: XRSessionInit) {
+        requested = true
+        mode = nextMode
+        options = nextOptions
+        return Promise.resolve(session)
+      },
+    },
+  })
+  try {
+    const store = { getState: () => ({ domOverlayRoot: undefined }) }
+    const result = requestWebXRSession(store as ReturnType<typeof createWebXRStore>)
+    expect(requested).toBe(true)
+    expect(mode).toBe('immersive-vr')
+    expect(options?.requiredFeatures).toEqual(['local-floor'])
+    expect(options?.optionalFeatures).toContain('hand-tracking')
+    expect(await result).toBe(session)
+  } finally {
+    if (previous) Object.defineProperty(navigator, 'xr', previous)
+    else Reflect.deleteProperty(navigator, 'xr')
+  }
 })

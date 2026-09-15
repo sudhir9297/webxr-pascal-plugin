@@ -1,11 +1,7 @@
 'use client'
 
 import { useScene } from '@pascal-app/core'
-import {
-  createXRStore,
-  type XRStore,
-  type XRStoreOptions,
-} from '@react-three/xr'
+import { createXRStore, type XRStore, type XRStoreOptions } from '@react-three/xr'
 import type { XRDevice } from 'iwer'
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { GOD_ORIGIN_POSITION } from './xr/god-mode'
@@ -68,6 +64,7 @@ export const WEBXR_ORIGIN_POSITION: [number, number, number] = [0, 0, 8]
 
 export function createWebXRStore(options: XRStoreOptions = {}): WebXRStore {
   return createXRStore({
+    emulate: false,
     controller: VisibleXRController,
     hand: VisibleXRHand,
     offerSession: false,
@@ -159,6 +156,7 @@ export function useWebXRRuntime(enabled: boolean): WebXRRuntimeState {
     if (!enabled) return
 
     let cancelled = false
+    let store: WebXRStore | undefined
     setRuntime({ status: 'loading' })
     prepareXRPlatform()
       .then((source) => {
@@ -167,7 +165,8 @@ export function useWebXRRuntime(enabled: boolean): WebXRRuntimeState {
           setRuntime({ status: 'unsupported' })
           return
         }
-        setRuntime({ source, status: 'ready', store: createWebXRStore({ layers: false }) })
+        store = createWebXRStore({ layers: false })
+        setRuntime({ source, status: 'ready', store })
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -179,6 +178,7 @@ export function useWebXRRuntime(enabled: boolean): WebXRRuntimeState {
 
     return () => {
       cancelled = true
+      store?.destroy()
     }
   }, [enabled])
 
@@ -238,9 +238,7 @@ export function useWebXRFeature(createStore: WebXRStoreFactory = createWebXRStor
   )
   const inputSources = useMemo(
     () =>
-      inputSourceStates.map(
-        (state) => `${state.type}:${state.inputSource.handedness || 'none'}`,
-      ),
+      inputSourceStates.map((state) => `${state.type}:${state.inputSource.handedness || 'none'}`),
     [inputSourceStates],
   )
 

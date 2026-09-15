@@ -1,5 +1,7 @@
 'use client'
 
+import { commitParametricNodeFields } from './parametric-node-update'
+
 import {
   type AnyNode,
   type AnyNodeId,
@@ -20,7 +22,6 @@ import {
   useScene,
 } from '@pascal-app/core'
 import {
-  commitParametricNodeFields,
   cycleSnappingModeIn,
   emitDeleteSFX,
   getHistoryCommandState,
@@ -33,6 +34,7 @@ import {
   useInteractionScope,
 } from '@pascal-app/editor'
 import { useViewer } from '@pascal-app/viewer'
+import { useXR } from '@react-three/xr'
 import { requestGodScaleReset } from '../../../../xr/god-mode'
 import { toggleXRPlayerMode, useXRPlayerMode, XR_PLAYER_MODES } from '../../../../xr/mode-switching'
 import {
@@ -236,6 +238,7 @@ function registryRowModel(
 }
 
 export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XRWandSettingsModel {
+  const session = useXR((state) => state.session)
   const terrainModel = usePascalXRWandTerrainModel()
   const paginationKey = useXRWandPanelSettings((state) => state.settingsContextKey)
   const paginationPage = useXRWandPanelSettings((state) => state.settingsPage)
@@ -527,6 +530,14 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
             label: 'Wall snap',
             onSelect: () => setSnappingMode('wall', cycleSnappingModeIn('wall', wallSnappingMode)),
             value: getSnappingModeLabel(wallSnappingMode),
+          },
+          {
+            id: 'exit-vr',
+            kind: 'action',
+            label: 'Exit VR',
+            onSelect: () => {
+              void session?.end().catch(console.error)
+            },
           },
         ]
 

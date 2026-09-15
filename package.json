@@ -36,13 +36,13 @@
     "@react-three/fiber": "^9",
     "@react-three/xr": "^6",
     "react": "^18 || ^19",
-    "three": "^0.185",
+    "three": "^0.185 || ^0.186",
     "zustand": "^5"
   },
   "devDependencies": {
-    "@pascal-app/core": "^1.0.0-beta.5",
-    "@pascal-app/editor": "^1.0.0-beta.5",
-    "@pascal-app/viewer": "^1.0.0-beta.5",
+    "@pascal-app/core": "workspace:*",
+    "@pascal-app/editor": "workspace:*",
+    "@pascal-app/viewer": "workspace:*",
     "@react-three/drei": "^10",
     "@react-three/fiber": "^9",
     "@react-three/xr": "^6",
@@ -52,10 +52,14 @@
     "@types/three": "^0.184.0",
     "@types/webxr": "^0.5.23",
     "react": "^19",
-    "three": "^0.185",
+    "three": "^0.186",
     "three-mesh-bvh": "^0.9.8",
     "typescript": "6.0.3",
-    "zustand": "^5"
+    "zustand": "^5",
+    "@types/react-dom": "^19.2.2",
+    "@types/blob-stream": "*",
+    "@types/pdfkit": "*",
+    "@types/howler": "*"
   },
   "keywords": [
     "webxr",

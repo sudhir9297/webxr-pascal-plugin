@@ -22,16 +22,14 @@ import {
   type WallEvent,
 } from '@pascal-app/core'
 import {
-  cancelActiveTool,
   canDirectMoveNode,
+  getSpatialPointerId,
+  spatialPointerInput,
   clipTerrainPatchToSite,
   commitStroke,
   createEditorApi,
-  EDITOR_GRID_INPUT_NAME,
-  getSpatialPointerId,
   resolveFlattenTarget,
   sculptFieldForSite,
-  spatialPointerInput,
   terrainPointInsideSite,
   useEditor,
   useInteractionScope,
@@ -342,7 +340,7 @@ export function XREditorInputBridge() {
       buttons: number,
       allowRayFallback = false,
     ): GridEvent | null => {
-      const grid = scene.getObjectByName(EDITOR_GRID_INPUT_NAME)
+      const grid = scene.getObjectByName('editor-grid')
       if (!updateRay(frame, source)) return null
       grid?.updateWorldMatrix(true, false)
 
@@ -549,6 +547,11 @@ export function XREditorInputBridge() {
       emitGridEvent('pointerdown', event.frame, event.inputSource, 1)
     }
     const onSelectEnd = (event: XRInputSourceEvent) => {
+      if (spatialPointerInput.release(event.inputSource)) {
+        selectReleaseGuard.current.cancel(event.inputSource)
+        capturedInputSource.current = null
+        return
+      }
       const releaseMode = useEditor.getState().mode
       const releaseTool = useEditor.getState().tool
       const wallOpeningToolActive =
@@ -571,8 +574,6 @@ export function XREditorInputBridge() {
         selectReleaseGuard.current.cancel(event.inputSource)
         return
       }
-
-      const handledSpatialRelease = spatialPointerInput.release(event.inputSource)
 
       const pressDrag = useEditor.getState().placementDragMode
       const mode = releaseMode
@@ -598,9 +599,7 @@ export function XREditorInputBridge() {
         lastXRWallEvent.current = null
       }
 
-      if (handledSpatialRelease && !wallOpeningToolActive) {
-        selectReleaseGuard.current.cancel(event.inputSource)
-      } else if (releaseAction === 'finish-placement-drag') {
+      if (releaseAction === 'finish-placement-drag') {
         useViewer.getState().setInputDragging(false)
         selectReleaseGuard.current.cancel(event.inputSource)
       } else if (releaseAction === 'emit-tool-grid-click') {
@@ -620,6 +619,7 @@ export function XREditorInputBridge() {
       capturedInputSource.current = null
     }
     const onSelectCancel = (event: XRInputSourceEvent) => {
+      spatialPointerInput.cancel(event.inputSource)
       if (panelInputSources.current.delete(xrInputSourceKey(event.inputSource))) {
         selectReleaseGuard.current.cancel(event.inputSource)
         return
@@ -635,10 +635,9 @@ export function XREditorInputBridge() {
         return
       }
 
-      const handledSpatialCancel = spatialPointerInput.cancel(event.inputSource)
       emitGridEvent('pointerup', event.frame, event.inputSource, 0)
       dispatchWindowPointerEvent('pointercancel', event.inputSource)
-      if (!handledSpatialCancel && useEditor.getState().placementDragMode) {
+      if (useEditor.getState().placementDragMode) {
         useViewer.getState().setInputDragging(false)
       }
       selectReleaseGuard.current.cancel(event.inputSource)
@@ -653,6 +652,9 @@ export function XREditorInputBridge() {
       session.removeEventListener('selectend', onSelectEnd)
       session.removeEventListener('selectcancel', onSelectCancel as unknown as EventListener)
       abandonTerrainStroke()
+      for (const source of session.inputSources) spatialPointerInput.cancel(source)
+      if (capturedInputSource.current) spatialPointerInput.cancel(capturedInputSource.current)
+      capturedInputSource.current = null
       emitter.off('wall:enter', rememberXRWallEvent)
       emitter.off('wall:move', rememberXRWallEvent)
       emitter.off('wall:leave', clearXRWallEvent)
@@ -702,21 +704,23 @@ export function XREditorInputBridge() {
       if (useEditor.getState().mode === 'terrain-sculpt') {
         if (capturedInputSource.current === source) applyTerrainDab(frame, source)
       } else {
-        emitGridEvent('move', frame, source, capturedInputSource.current ? 1 : 0)
+        const handleDragging =
+          updateRay(frame, source) && spatialPointerInput.move(source, raycaster.current.ray)
+        if (!handleDragging)
+          emitGridEvent('move', frame, source, capturedInputSource.current ? 1 : 0)
         const editor = useEditor.getState()
         if (editor.mode === 'build' && (editor.tool === 'door' || editor.tool === 'window')) {
           emitWallOpeningHover(frame, source)
         } else {
           lastSyntheticWallEvent.current = null
         }
-        spatialPointerInput.move(source, raycaster.current.ray)
       }
     }
 
     const nextCancelPressed = isXRCancelPressed(inputSources)
     if (didXRButtonPressStart(cancelPressed.current, nextCancelPressed)) {
       abandonTerrainStroke()
-      cancelActiveTool()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       const rightController = inputSources.find(
         (inputSource) => inputSource.handedness === 'right' && inputSource.gamepad != null,
       )

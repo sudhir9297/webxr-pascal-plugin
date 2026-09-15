@@ -1,3 +1,4 @@
+export { usePascalWebXR, PascalWebXRButton } from './inline-session'
 export {
   didXRButtonPressStart,
   isXRCancelPressed,
@@ -15,10 +16,7 @@ export {
   applyXRReferenceSpaceRayToWorld,
   setObjectFloorPlane,
 } from './input/reference-space-ray'
-export {
-  PascalXRPreviewEnvironment,
-  type PascalXRPreviewEnvironmentProps,
-} from './preview/preview-environment'
+
 export {
   type XREmulatorTestHarness,
   XREmulatorTestHarnessBridge,

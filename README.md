@@ -2,10 +2,9 @@
 
 WebXR session support for the Pascal editor.
 
-Installing the plugin adds a VR button beside Preview. The button copies the
-current editor scene into a dedicated XR preview window. That window uses a
-native headset when available and an emulated Meta Quest 3 during local
-development.
+The VR button enters the current editor scene in place. It uses a native
+headset when available and an emulated Meta Quest 3 during local development.
+No route change, popup, scene snapshot, or second scene store is needed.
 
 The plugin owns the XR runtime:
 
@@ -15,7 +14,7 @@ The plugin owns the XR runtime:
 - God and Human modes, locomotion, collision, and comfort controls
 - tracked pointer rays and stereo-eye layer handling
 - the left-hand Build, Paint, and Settings wand UI, including its spatial controls and session state
-- the Pascal editor input bridge, preview environment, and development emulator harness
+- the Pascal editor input bridge, inline session integration and development emulator harness
 - Pascal-specific Build, Paint, Terrain, selection, and parametric-settings models
 
 The Pascal viewer remains the host for the scene renderer, lights, materials,
@@ -30,7 +29,7 @@ Pascal-specific host integration is isolated from the generic WebXR runtime:
 ```text
 src/integrations/pascal-editor/
 ├── input/    # editor event routing and reference-space ray conversion
-├── preview/  # standalone scene host and immersive error boundary
+├── inline-session.tsx # live editor session and toolbar controls
 ├── testing/  # development emulator harness
 └── wand/     # host bindings plus Build/Paint/Settings/Terrain models
 ```
@@ -38,12 +37,27 @@ src/integrations/pascal-editor/
 ## Development
 
 ```bash
+cd ../editor
 bun install
+cd ../webxr-pascal-plugin
 bun run check-types
 bun test
 ```
 
-The root package exposes its manifest, toolbar button, preview handoff, runtime
+The sibling `../editor` checkout is used for local Pascal package development.
+The editor workspace includes `../webxr-pascal-plugin` and the app depends on
+`@webxr/plugin` through `workspace:*`. Run `bun install` in `../editor` after
+cloning both sibling repositories.
+Its Turbopack aliases resolve both projects to the host's React, Three, Fiber,
+XR, and Pascal packages so the scene and controller stores stay shared.
+
+The host calls `usePascalWebXR(webXRWandBindings)`, passes `feature.immersive`
+to `<Editor immersive={...}>`, and mounts `<PascalWebXRButton feature={feature} />`
+beside Walkthrough. The plugin prepares XR before the click, requests the
+session during the click, and ends it on unmount. Exit restores the desktop
+view, camera, wall and level modes. Build/Paint changes remain in the live scene.
+
+The root package exposes its manifest, toolbar button, session wrappers, runtime
 hooks, viewer configuration, player modes, and generic wand API. Pascal editor
 integration is exposed separately from `@webxr/plugin/pascal-editor` so generic
 consumers do not eagerly load editor-only modules.
