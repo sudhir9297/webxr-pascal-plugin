@@ -14,6 +14,7 @@ export type XRWandBuildItem = {
 export type XRWandBuildModel = {
   back?: { label: string; onSelect: () => void }
   items: XRWandBuildItem[]
+  secondaryItems?: XRWandBuildItem[]
   mark: string
   onPageChange?: (page: number) => void
   page: number

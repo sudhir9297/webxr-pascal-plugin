@@ -151,7 +151,14 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
     // Read the store here so controller recall and pointer recall share one path.
     const request = useXRWorkspace.getState().recallRequest
-    if (handledRecall.current === request || drag.current.pointerId !== null) return
+    if (drag.current.pointerId !== null) {
+      workspaceParentPoint(group, eye.current, localEye.current)
+      drag.current.maintain(drag.current.pointerId, localEye.current, group.position)
+      localEye.current.y = group.position.y
+      group.lookAt(localEye.current)
+      return
+    }
+    if (handledRecall.current === request) return
     // Wait for an actual XR frame before initial placement.
     if (session && !frame) return
     placeWorkspace(eye.current, direction.current, target.current)
@@ -166,13 +173,15 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
   const startDrag = (event: PointerDownEvent) => {
     event.stopPropagation()
+    if (!root.current || !viewerTracked.current) return
+    workspaceParentPoint(root.current, eye.current, localEye.current)
     if (
       !viewerTracked.current ||
-      !root.current ||
       !drag.current.start(
         event.pointerId,
         workspaceParentPoint(root.current, event.point, localPoint.current),
         root.current.position,
+        localEye.current,
       )
     )
       return

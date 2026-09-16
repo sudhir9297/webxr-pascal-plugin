@@ -132,17 +132,48 @@ export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWan
   ])
 
   const current = getPageWithPinnedFirst(entries, page, ITEMS_PER_PAGE)
+  const primaryEntries = useMemo<XRWandBuildItem[]>(
+    () =>
+      buildTypes.map((type) => ({
+        active:
+          type.id === 'mep'
+            ? section === 'mep'
+            : type.id === 'roof'
+              ? section === 'roof'
+              : type.mode
+                ? mode === type.mode
+                : mode === 'build' && activeTool === type.kind,
+        icon: { src: type.iconSrc },
+        id: type.id,
+        label: type.label,
+        onSelect: () => {
+          if (type.id === 'mep') {
+            bindings.activateBuildTool('duct-segment')
+            setBuildNavigation('mep', 0)
+          } else if (type.id === 'roof') {
+            bindings.activateBuildTool('roof')
+            setBuildNavigation('roof', 0)
+          } else if (type.mode === 'material-paint') bindings.activatePaintMode()
+          else if (type.mode === 'terrain-sculpt') bindings.activateTerrainSculptMode()
+          else if (type.id === 'kitchen') bindings.activateModularCabinetTool()
+          else if (type.kind) bindings.activateBuildTool(type.kind)
+        },
+      })),
+    [activeTool, bindings, buildTypes, mode, section, setBuildNavigation],
+  )
   return {
     back:
       section === 'main'
         ? undefined
         : { label: 'Back', onSelect: () => setBuildNavigation('main', 0) },
-    items: current.items,
+    items: section === 'main' ? current.items : primaryEntries,
     mark: `${entries.length} tools`,
     onPageChange: (nextPage) => setBuildNavigation(section, nextPage),
     page: current.currentPage,
     pageCount: current.pageCount,
     section,
+    secondaryItems:
+      section === 'main' ? undefined : current.items.filter((item) => item.id !== 'select'),
     title: section === 'main' ? 'Build' : section === 'mep' ? 'MEP' : 'Roof',
   }
 }

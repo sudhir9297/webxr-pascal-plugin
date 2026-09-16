@@ -3,6 +3,7 @@
 import type { XRWandAdapter, XRWandBuildItem } from './adapter'
 import { PanelIcon } from './panel-icon'
 import { PanelHeader, SpatialButton } from './spatial-controls'
+import { SpatialLine } from './spatial-line'
 import { SpatialText } from './spatial-text'
 import { XR_WAND_THEME } from './theme'
 
@@ -38,6 +39,9 @@ function PaletteTile({ item, index }: { item: XRWandBuildItem; index: number }) 
 export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
   const model = adapter.useBuildModel()
 
+  const renderItems = (items: XRWandBuildItem[]) =>
+    items.map((item, index) => <PaletteTile item={item} index={index} key={item.id} />)
+
   return (
     <group name="xr-wand-build-panel">
       <PanelHeader mark={model.mark} title={model.title} width={1.4} />
@@ -59,9 +63,22 @@ export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
           </SpatialText>
         </SpatialButton>
       ) : null}
-      {model.items.map((item, index) => (
-        <PaletteTile item={item} index={index} key={item.id} />
-      ))}
+      <group position={[-0.36, 0, 0]} scale={[0.5, 1, 1]}>
+        {renderItems(model.items)}
+      </group>
+      <group position={[0.36, 0, 0]} scale={[0.5, 1, 1]}>
+        {renderItems(model.secondaryItems ?? [])}
+      </group>
+      <SpatialLine
+        color={XR_WAND_THEME.border}
+        lineWidth={1.2}
+        opacity={0.75}
+        points={[
+          [0, -0.48, 0.016],
+          [0, 0.48, 0.016],
+        ]}
+        transparent
+      />
       {model.pageCount > 1 ? (
         <group position={[0.48, 0.35, 0]}>
           <SpatialButton

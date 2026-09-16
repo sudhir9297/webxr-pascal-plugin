@@ -81,4 +81,14 @@ describe('floating workspace placement and drag ownership', () => {
     expect(constrainWorkspacePosition(eye.clone(), eye)).toBe(false)
     expect(constrainWorkspacePosition(new Vector3(NaN, 0, 0), eye)).toBe(false)
   })
+
+  test('keeps a dragged workspace at its original radius and height', () => {
+    const drag = new WorkspaceDrag()
+    const eye = new Vector3(0, 1.6, 0)
+    const target = new Vector3()
+    drag.start(1, new Vector3(0, 1.2, -1), new Vector3(0, 1.2, -1.05), eye)
+    expect(drag.move(1, new Vector3(2, 4, 0), eye, target)).toBe(true)
+    expect(Math.hypot(target.x - eye.x, target.z - eye.z)).toBeCloseTo(1.05)
+    expect(target.y).toBeCloseTo(1.2)
+  })
 })
