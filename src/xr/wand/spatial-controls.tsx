@@ -1,5 +1,7 @@
 'use client'
 
+import { SpatialMaterial } from './spatial-material'
+
 import { useWebXRSceneLayers } from '../layers'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { DoubleSide, Shape } from 'three'
@@ -7,6 +9,7 @@ import { XR_WAND_PANEL_LAYOUT } from './panel-layout'
 import { SpatialLine, shapeLinePoints } from './spatial-line'
 import { SpatialText } from './spatial-text'
 import { XR_WAND_THEME } from './theme'
+import { useSpatialScroll } from './spatial-scroll'
 
 declare global {
   var __pascalXRHoveredTarget: string | undefined
@@ -59,10 +62,11 @@ export function SpatialButton({
   size: [number, number]
 }) {
   const { overlay } = useWebXRSceneLayers()
+  const scroll = useSpatialScroll()
   const [hovered, setHovered] = useState(false)
   const [pressed, setPressed] = useState(false)
   const hoverLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const shape = useMemo(() => roundedShape(size[0], size[1]), [size[0], size[1]])
+  const shape = useMemo(() => roundedShape(size[0], size[1], 0.025), [size[0], size[1]])
   const points = useMemo(() => shapeLinePoints(shape), [shape])
 
   useEffect(
@@ -77,8 +81,10 @@ export function SpatialButton({
       <mesh
         layers={overlay}
         name={name}
+        {...(scroll ? { raycast: scroll.raycast, onWheel: scroll.wheel } : {})}
         onClick={(event) => {
           event.stopPropagation()
+          if (scroll) return
           if (process.env.NODE_ENV === 'development') {
             globalThis.__pascalXRLastPointerEvent = `click:${name ?? ''}`
           }
@@ -90,6 +96,10 @@ export function SpatialButton({
         }}
         onPointerDown={(event) => {
           event.stopPropagation()
+          if (scroll) {
+            scroll.begin(event, disabled ? undefined : onClick, name)
+            return
+          }
           event.object.setPointerCapture?.(event.pointerId)
           if (process.env.NODE_ENV === 'development') {
             globalThis.__pascalXRLastPointerEvent = `down:${name ?? ''}`
@@ -120,10 +130,11 @@ export function SpatialButton({
         position={[0, 0, 0.004]}
       >
         <shapeGeometry args={[shape, 4]} />
-        <meshBasicMaterial
-          color={selected ? accent : color}
+        <SpatialMaterial
+          color={selected ? accent : hovered && color === text ? XR_WAND_THEME.hover : color === text ? XR_WAND_THEME.surface : color}
           depthWrite={false}
-          opacity={disabled ? 0.02 : selected ? 0.28 : hovered ? 0.12 : 0.06}
+          opacity={disabled ? 0.3 : 1}
+          toneMapped={false}
           side={DoubleSide}
           transparent
         />
@@ -131,7 +142,7 @@ export function SpatialButton({
       <SpatialLine
         color={disabled ? disabledColor : selected ? accentLine : border}
         lineWidth={selected ? 2.5 : 1}
-        opacity={disabled ? 0.25 : 0.85}
+        opacity={disabled ? 0.15 : selected ? 1 : hovered ? 0.7 : 0.3}
         points={points}
         transparent
       />
@@ -163,7 +174,7 @@ export function PanelFace({
         position={[0, 0, -0.012]}
       >
         <shapeGeometry args={[shape, 8]} />
-        <meshBasicMaterial color={panel} depthWrite opacity={1} />
+        <SpatialMaterial color={panel} depthWrite opacity={1} toneMapped={false} />
       </mesh>
       <SpatialLine color={border} lineWidth={1.4} opacity={0.9} points={points} />
     </>
@@ -189,7 +200,8 @@ export function PanelHeader({
         anchorX="left"
         anchorY="middle"
         color={text}
-        fontSize={0.052}
+        fontSize={0.038}
+        maxWidth={width - (onDelete ? 0.3 : 0.12)}
         position={[left, 0.45, 0.012]}
       >
         {title}
@@ -207,7 +219,7 @@ export function PanelHeader({
       )}
       {onDelete && (
         <SpatialButton
-          color="#7f1d1d"
+          color={XR_WAND_THEME.destructive}
           name="xr-setting-delete"
           onClick={onDelete}
           position={[right - 0.06, 0.45, 0]}
@@ -216,7 +228,7 @@ export function PanelHeader({
           <SpatialText
             anchorX="center"
             anchorY="middle"
-            color="#fecaca"
+            color={XR_WAND_THEME.destructiveText}
             fontSize={0.017}
             position={[0, 0, 0.012]}
           >

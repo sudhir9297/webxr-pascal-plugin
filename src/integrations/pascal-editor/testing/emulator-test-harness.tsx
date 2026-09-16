@@ -16,6 +16,8 @@ import { useXR } from '@react-three/xr'
 import { useEffect } from 'react'
 import { Box3, Object3D, Quaternion, Raycaster, Vector3 } from 'three'
 import { getEmulatedXRDevice } from '../../../runtime'
+import { useXRWorkspace } from '../../../xr/wand/workspace-store'
+import { useXRPlayerMode } from '../../../xr/mode-switching/store/player-mode'
 import { useXRWandPanelSettings } from '../../../xr/wand'
 import { resolveEmulatedInputPose } from './emulator-ray'
 
@@ -25,6 +27,10 @@ const XR_INPUT_EVENT_TIMEOUT_MS = 150
 const XR_FRAME_TIMEOUT_MS = 100
 
 export type XREmulatorTestHarness = {
+  clickNodeOnce: (nodeId: string) => Promise<Record<string, unknown>>
+  snapTurn: () => Promise<boolean>
+  moveViewer: (delta: [number, number, number], yaw?: number) => Promise<boolean>
+  setPlayerMode: (mode: 'god' | 'human') => Promise<void>
   aimAt: (name: string, inputKind?: InputKind) => Promise<boolean>
   aimAtNode: (nodeId: string, inputKind?: InputKind, distance?: number) => Promise<boolean>
   click: (name: string, inputKind?: InputKind) => Promise<boolean>
@@ -108,7 +114,13 @@ export type XREmulatorTestHarness = {
     terrainSampling: boolean
     terrainVerb: string
     wandPanelScale: number
+    workspaceRecallRequest: number
+    playerMode: string
     workspace: {
+      recallPosition: number[]
+      recallQuaternion: number[]
+      localPosition: number[]
+      quaternion: number[]
       position: number[]
       scale: number[]
       contentVisible: boolean
@@ -121,6 +133,14 @@ export type XREmulatorTestHarness = {
     tool: string | null
     toolDefaults: Record<string, unknown>
   }
+  scrollViews: () => { name: string; offset: number }[]
+  dragSpatial: (name: string, delta: [number, number, number], inputKind?: InputKind) => Promise<boolean>
+  listHandles: () => { id: string; position: number[] }[]
+  dragHandle: (
+    id: string,
+    delta: [number, number, number],
+    inputKind?: InputKind,
+  ) => Promise<boolean>
   version: 1
 }
 
@@ -689,6 +709,127 @@ export function XREmulatorTestHarnessBridge() {
     }
 
     const harness: XREmulatorTestHarness = {
+      clickNodeOnce: async (nodeId) => {
+        const events: unknown[] = []
+        const selected = (node: AnyNode) => events.push({ intent: node.id, selected: useViewer.getState().selection.selectedIds })
+        const unsubscribe = useViewer.subscribe((state, previous) => {
+          if (state.selection.selectedIds !== previous.selection.selectedIds) events.push({ selected: state.selection.selectedIds })
+        })
+        emitter.on('selection:canvas-node-click', selected)
+        try {
+          if (!(await aimAtNode(nodeId, 'controller'))) return { aimed: false }
+          await setSelectValueAndWait(1, 'controller', 'selectstart')
+          await setSelectValueAndWait(0, 'controller', 'selectend')
+          await waitForXRFrames(3)
+          return { events }
+        } finally {
+          unsubscribe()
+          emitter.off('selection:canvas-node-click', selected)
+        }
+      },
+      snapTurn: async () => {
+        const device = getEmulatedXRDevice()
+        if (!device || !(await prepareInput('controller'))) return false
+        try {
+          await device.remote.dispatch('set_gamepad_state', {
+            device: 'controller-right', axes: [{ index: 0, value: 1 }],
+          })
+          await waitForXRFrames(3)
+        } finally {
+          await device.remote.dispatch('set_gamepad_state', {
+            device: 'controller-right', axes: [{ index: 0, value: 0 }],
+          })
+          await waitForXRFrames(2)
+        }
+        return true
+      },
+      moveViewer: async (delta, yaw) => {
+        const device = getEmulatedXRDevice()
+        if (!device) return false
+        const transform = await device.remote.dispatch('get_transform', { device: 'headset' }) as {
+          position: { x: number; y: number; z: number }
+          orientation: { x: number; y: number; z: number; w: number }
+        }
+        const rotation = yaw === undefined ? transform.orientation : {
+          x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2),
+        }
+        await device.remote.dispatch('set_transform', {
+          device: 'headset',
+          position: { x: transform.position.x + delta[0], y: transform.position.y + delta[1], z: transform.position.z + delta[2] },
+          orientation: rotation,
+        })
+        await waitForXRFrames(3)
+        return true
+      },
+      setPlayerMode: async (mode) => {
+        if (mode !== 'god' && mode !== 'human') throw new Error('Invalid player mode')
+        useXRPlayerMode.getState().setMode(mode)
+        await waitForXRFrames(3)
+      },
+      scrollViews: () => {
+        const views: { name: string; offset: number }[] = []
+        scene.traverseVisible((object) => {
+          if (object.name.endsWith('-scroll')) views.push({ name: object.name, offset: object.userData.scrollOffset ?? 0 })
+        })
+        return views
+      },
+      dragSpatial: async (name, delta, inputKind = 'controller') => {
+        const source = findTarget(name)
+        if (!source || !(await aimAt(name, inputKind))) return false
+        const target = new Object3D()
+        source.getWorldPosition(target.position)
+        source.getWorldQuaternion(target.quaternion)
+        target.updateMatrixWorld(true)
+        try {
+          if (!(await setSelectValueAndWait(1, inputKind, 'selectstart'))) return false
+          for (let step = 0; step < 12; step += 1) {
+            target.position.addScaledVector(new Vector3(...delta), 1 / 12)
+            target.updateMatrixWorld(true)
+            await setInputPose(target, inputKind, 0.5)
+            await waitForXRFrames(2)
+          }
+        } finally {
+          await setSelectValueAndWait(0, inputKind, 'selectend')
+        }
+        await waitForXRFrames(2)
+        return true
+      },
+      listHandles: () => {
+        const handles: { id: string; position: number[] }[] = []
+        scene.traverseVisible((object) => {
+          if (object.userData.editorHandleHitArea === true) {
+            handles.push({
+              id: object.uuid,
+              position: object.getWorldPosition(new Vector3()).toArray(),
+            })
+          }
+        })
+        return handles
+      },
+      dragHandle: async (id, delta, inputKind = 'controller') => {
+        const handle = scene.getObjectByProperty('uuid', id)
+        if (!handle || !(await prepareInput(inputKind))) return false
+        const target = new Object3D()
+        handle.getWorldPosition(target.position)
+        target.lookAt(target.position.clone().add(new Vector3(0, 0.5, 0.5)))
+        target.updateMatrixWorld(true)
+        const before = JSON.stringify(useScene.getState().nodes)
+        await setInputPose(target, inputKind, 0.5)
+        await waitForXRFrames(2)
+        try {
+          await setSelectValueAndWait(1, inputKind, 'selectstart')
+          for (let step = 0; step < 10; step += 1) {
+            target.position.addScaledVector(new Vector3(...delta), 0.1)
+            target.updateMatrixWorld(true)
+            await setInputPose(target, inputKind, 0.5)
+            await waitForXRFrames(2)
+          }
+        } finally {
+          await setSelectValueAndWait(0, inputKind, 'selectend')
+        }
+        await waitForXRFrames(2)
+        return JSON.stringify(useScene.getState().nodes) !== before
+      },
       aimAt,
       aimAtNode,
       click,
@@ -823,8 +964,14 @@ export function XREmulatorTestHarnessBridge() {
           terrainSampling: useEditor.getState().terrainSampling,
           terrainVerb: useEditor.getState().terrainVerb,
           wandPanelScale: useXRWandPanelSettings.getState().panelScale,
+          playerMode: useXRPlayerMode.getState().mode,
+          workspaceRecallRequest: useXRWorkspace.getState().recallRequest,
           workspace: workspace
             ? {
+                recallPosition: workspace.parent?.position.toArray() ?? [],
+                recallQuaternion: workspace.parent?.quaternion.toArray() ?? [],
+                localPosition: workspace.position.toArray(),
+                quaternion: workspace.getWorldQuaternion(new Quaternion()).toArray(),
                 position: workspace.getWorldPosition(new Vector3()).toArray(),
                 scale: workspace.children[0]?.getWorldScale(new Vector3()).toArray() ?? [],
                 contentVisible: !!findTarget('xr-workspace-content'),

@@ -1,7 +1,7 @@
 'use client'
 
 import { type RoofType, RoofType as RoofTypeSchema, useRegistryVersion } from '@pascal-app/core'
-import { useEditor, useFloorplanMode } from '@pascal-app/editor'
+import { CATALOG_ITEMS, useEditor, useFloorplanMode } from '@pascal-app/editor'
 import {
   getPageWithPinnedFirst,
   useXRWandPanelSettings,
@@ -9,6 +9,7 @@ import {
   type XRWandBuildModel,
 } from '../../../../xr/wand'
 import { useMemo } from 'react'
+import { useViewer } from '@pascal-app/viewer'
 import type { PascalXRRoofFeature, PascalXRWandBindings } from '../bindings'
 
 // The build palette is a 4x3 grid. Keep the page size in sync with the
@@ -17,10 +18,11 @@ const ITEMS_PER_PAGE = 12
 
 export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWandBuildModel {
   const section = useXRWandPanelSettings((state) => state.buildSection)
-  const page = useXRWandPanelSettings((state) => state.buildPage)
+  const mainPage = useXRWandPanelSettings((state) => state.buildMainPage)
   const setBuildNavigation = useXRWandPanelSettings((state) => state.setBuildNavigation)
   const mode = useEditor((state) => state.mode)
   const activeTool = useEditor((state) => state.tool)
+  const selectedItem = useEditor((state) => state.selectedItem)
   const roofDefaults = useEditor((state) => state.toolDefaults.roof)
   const floorplanMode = useFloorplanMode((state) => state.mode)
   const registryVersion = useRegistryVersion()
@@ -37,11 +39,37 @@ export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWan
 
   const entries = useMemo<XRWandBuildItem[]>(() => {
     const selectEntry: XRWandBuildItem = {
-      active: mode === 'select',
+      active: mode === 'select' && section === 'main',
       icon: { src: '/icons/select.webp' },
       id: 'select',
       label: 'Select',
-      onSelect: bindings.activateSelectMode,
+      onSelect: () => {
+        bindings.activateSelectMode()
+        setBuildNavigation('main', mainPage)
+      },
+    }
+
+    if (section === 'items') {
+      return [
+        selectEntry,
+        ...CATALOG_ITEMS.map((item) => ({
+          active:
+            mode === 'build' &&
+            activeTool === (item.tool ?? 'item') &&
+            selectedItem?.id === item.id,
+          icon: { src: item.thumbnail },
+          id: `item-${item.id}`,
+          label: item.name,
+          onSelect: () => {
+            bindings.activateSelectMode()
+            useViewer.getState().setSelection({ selectedIds: [], zoneId: null })
+            const editor = useEditor.getState()
+            editor.setSelectedItem(item)
+            editor.setTool(item.tool ?? 'item')
+            editor.setMode('build')
+          },
+        })),
+      ]
     }
 
     if (section === 'mep') {
@@ -78,49 +106,9 @@ export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWan
       ]
     }
 
-    return [
-      selectEntry,
-      ...buildTypes.map((type) => {
-        const isMepTool =
-          !!activeTool &&
-          (activeTool.includes('duct') ||
-            activeTool.includes('pipe') ||
-            activeTool === 'lineset' ||
-            activeTool === 'liquid-line' ||
-            activeTool === 'hvac-equipment')
-        const active = type.mode
-          ? mode === type.mode
-          : type.id === 'kitchen'
-            ? mode === 'build' && activeTool === 'cabinet'
-            : type.id === 'mep'
-              ? mode === 'build' && isMepTool
-              : mode === 'build' && activeTool === type.kind
-        return {
-          active,
-          icon: { src: type.iconSrc },
-          id: type.id,
-          label: type.label,
-          onSelect: () => {
-            if (type.id === 'mep') {
-              bindings.activateBuildTool('duct-segment')
-              setBuildNavigation('mep', 0)
-            } else if (type.id === 'roof') {
-              bindings.activateBuildTool('roof')
-              setBuildNavigation('roof', 0)
-            } else if (type.id === 'kitchen') {
-              bindings.activateModularCabinetTool()
-            } else if (type.mode === 'material-paint') {
-              bindings.activatePaintMode()
-            } else if (type.mode === 'terrain-sculpt') {
-              bindings.activateTerrainSculptMode()
-            } else if (type.kind) {
-              bindings.activateBuildTool(type.kind)
-            }
-          },
-        }
-      }),
-    ]
+    return []
   }, [
+    mainPage,
     activeRoofType,
     activeTool,
     bindings,
@@ -128,13 +116,33 @@ export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWan
     mode,
     roofFeatures,
     section,
+    selectedItem,
     setBuildNavigation,
   ])
 
-  const current = getPageWithPinnedFirst(entries, page, ITEMS_PER_PAGE)
   const primaryEntries = useMemo<XRWandBuildItem[]>(
-    () =>
-      buildTypes.map((type) => ({
+    () => [
+      {
+        active: mode === 'select' && section === 'main',
+        icon: { src: '/icons/select.webp' },
+        id: 'select',
+        label: 'Select',
+        onSelect: () => {
+          bindings.activateSelectMode()
+          setBuildNavigation('main', mainPage)
+        },
+      },
+      {
+        active: section === 'items',
+        icon: { src: '/icons/couch.webp' },
+        id: 'items',
+        label: 'Items',
+        onSelect: () => {
+          bindings.activateSelectMode()
+          setBuildNavigation('items', 0)
+        },
+      },
+      ...buildTypes.map((type) => ({
         active:
           type.id === 'mep'
             ? section === 'mep'
@@ -153,27 +161,42 @@ export function usePascalXRWandBuildModel(bindings: PascalXRWandBindings): XRWan
           } else if (type.id === 'roof') {
             bindings.activateBuildTool('roof')
             setBuildNavigation('roof', 0)
-          } else if (type.mode === 'material-paint') bindings.activatePaintMode()
-          else if (type.mode === 'terrain-sculpt') bindings.activateTerrainSculptMode()
-          else if (type.id === 'kitchen') bindings.activateModularCabinetTool()
-          else if (type.kind) bindings.activateBuildTool(type.kind)
+          } else if (type.mode === 'material-paint') {
+            bindings.activatePaintMode()
+            setBuildNavigation('main', mainPage)
+          } else if (type.mode === 'terrain-sculpt') {
+            bindings.activateTerrainSculptMode()
+            setBuildNavigation('main', mainPage)
+          } else if (type.id === 'kitchen') {
+            bindings.activateModularCabinetTool()
+            setBuildNavigation('main', mainPage)
+          } else if (type.kind) {
+            bindings.activateBuildTool(type.kind)
+            setBuildNavigation('main', mainPage)
+          }
         },
       })),
-    [activeTool, bindings, buildTypes, mode, section, setBuildNavigation],
+    ],
+    [activeTool, bindings, buildTypes, mode, section, setBuildNavigation, mainPage],
   )
+  const primary = getPageWithPinnedFirst(primaryEntries, mainPage, ITEMS_PER_PAGE)
   return {
     back:
       section === 'main'
         ? undefined
-        : { label: 'Back', onSelect: () => setBuildNavigation('main', 0) },
-    items: section === 'main' ? current.items : primaryEntries,
-    mark: `${entries.length} tools`,
-    onPageChange: (nextPage) => setBuildNavigation(section, nextPage),
-    page: current.currentPage,
-    pageCount: current.pageCount,
+        : {
+            label: 'Close',
+            onSelect: () => setBuildNavigation('main', mainPage),
+          },
+    items: primary.items,
+    mark: `${primaryEntries.length} tools`,
+    onPageChange: (nextPage) => setBuildNavigation('main', nextPage),
+    page: primary.currentPage,
+    pageCount: primary.pageCount,
     section,
-    secondaryItems:
-      section === 'main' ? undefined : current.items.filter((item) => item.id !== 'select'),
-    title: section === 'main' ? 'Build' : section === 'mep' ? 'MEP' : 'Roof',
+    secondaryItems: section === 'main' ? undefined : entries.filter((item) => item.id !== 'select'),
+    secondaryTitle: section === 'items' ? 'Items' : section === 'mep' ? 'MEP' : 'Roof',
+    detailMode: mode === 'material-paint' ? 'paint' : undefined,
+    title: 'Build',
   }
 }

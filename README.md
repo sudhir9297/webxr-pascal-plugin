@@ -51,6 +51,15 @@ trigger/pinch selection.
 
 ### Local checks
 
+For browser-driven emulator checks, open the local editor with `?xrTest=1`
+and enter VR. The development-only **XR emulator tests** panel lists commands
+and accepts their arguments as a JSON array. It drives the emulated controller
+or hand through the XR input pipeline. `listSpatialTargets`, `listHandles`,
+and `readNode` help inspect targets and verify committed changes.
+
+See [browser QA results](docs/webxr-browser-qa.md) for the tested host setup,
+fixes, coverage, and remaining hardware checks.
+
 ```bash
 cd ../editor
 bun install

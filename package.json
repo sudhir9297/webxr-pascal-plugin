@@ -36,6 +36,7 @@
     "@react-three/fiber": "^9",
     "@react-three/xr": "^6",
     "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
     "three": "^0.185 || ^0.186",
     "zustand": "^5"
   },
@@ -52,6 +53,7 @@
     "@types/three": "^0.184.0",
     "@types/webxr": "^0.5.23",
     "react": "^19",
+    "react-dom": "^19",
     "three": "^0.186",
     "three-mesh-bvh": "^0.9.8",
     "typescript": "6.0.3",

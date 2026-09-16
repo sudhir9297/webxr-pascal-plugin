@@ -4,9 +4,10 @@ export const XR_WAND_PANEL_SCALE_MIN = 0.65
 export const XR_WAND_PANEL_SCALE_MAX = 1.6
 export const XR_WAND_PANEL_SCALE_STEP = 0.1
 
-export type XRWandBuildSection = 'main' | 'mep' | 'roof'
+export type XRWandBuildSection = 'main' | 'mep' | 'roof' | 'items'
 
 type XRWandPanelSettingsState = {
+  buildMainPage: number
   buildPage: number
   buildSection: XRWandBuildSection
   paintCategoryIndex: number
@@ -23,6 +24,7 @@ type XRWandPanelSettingsState = {
 }
 
 export const useXRWandPanelSettings = create<XRWandPanelSettingsState>((set) => ({
+  buildMainPage: 0,
   buildPage: 0,
   buildSection: 'main',
   paintCategoryIndex: 0,
@@ -32,7 +34,11 @@ export const useXRWandPanelSettings = create<XRWandPanelSettingsState>((set) => 
   settingsPage: 0,
   terrainPage: 0,
   setBuildNavigation: (buildSection, buildPage) => {
-    set({ buildPage: Math.max(0, Math.floor(buildPage)), buildSection })
+    set({
+      buildPage: Math.max(0, Math.floor(buildPage)),
+      buildSection,
+      ...(buildSection === 'main' ? { buildMainPage: Math.max(0, Math.floor(buildPage)) } : {}),
+    })
   },
   setPaintNavigation: (paintCategoryIndex, paintPage) => {
     set({

@@ -8,6 +8,6 @@ export function createPascalXRWandAdapter(bindings: PascalXRWandBindings): XRWan
   return {
     useBuildModel: () => usePascalXRWandBuildModel(bindings),
     usePaintModel: () => usePascalXRWandPaintModel(bindings),
-    useSettingsModel: () => usePascalXRWandSettingsModel(bindings),
+    useSettingsModel: (options) => usePascalXRWandSettingsModel(bindings, options),
   }
 }

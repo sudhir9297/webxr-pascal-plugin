@@ -1,61 +1,30 @@
 'use client'
 
+import { useState } from 'react'
 import type { XRWandAdapter, XRWandPaintItem } from './adapter'
 import { PanelIcon } from './panel-icon'
 import { PanelHeader, SpatialButton } from './spatial-controls'
 import { SpatialLine } from './spatial-line'
+import { SpatialScroll } from './spatial-scroll'
 import { SpatialText } from './spatial-text'
-import { XR_WAND_THEME } from './theme'
-
-const MATERIAL_TILE_SIZE: [number, number] = [0.255, 0.205]
-const MATERIAL_PREVIEW_SIZE = 0.116
-const MATERIAL_GRID_TOP = 0.135
-const MATERIAL_GRID_ROW_GAP = 0.25
-const MATERIAL_PREVIEW_FRAME = MATERIAL_PREVIEW_SIZE / 2
-const MATERIAL_PREVIEW_FRAME_POINTS: [number, number, number][] = [
-  [-MATERIAL_PREVIEW_FRAME, -MATERIAL_PREVIEW_FRAME + 0.022, 0.014],
-  [MATERIAL_PREVIEW_FRAME, -MATERIAL_PREVIEW_FRAME + 0.022, 0.014],
-  [MATERIAL_PREVIEW_FRAME, MATERIAL_PREVIEW_FRAME + 0.022, 0.014],
-  [-MATERIAL_PREVIEW_FRAME, MATERIAL_PREVIEW_FRAME + 0.022, 0.014],
-  [-MATERIAL_PREVIEW_FRAME, -MATERIAL_PREVIEW_FRAME + 0.022, 0.014],
-]
-
-function materialPosition(index: number): [number, number, number] {
-  return [
-    -0.45 + (index % 4) * 0.3,
-    MATERIAL_GRID_TOP - Math.floor(index / 4) * MATERIAL_GRID_ROW_GAP,
-    0,
-  ]
-}
-
-function materialLabelFontSize(label: string) {
-  if (label.length > 16) return 0.016
-  if (label.length > 11) return 0.017
-  return 0.018
-}
+import { XR_WAND_THEME as theme } from './theme'
 
 function MaterialTile({ item, index }: { item: XRWandPaintItem; index: number }) {
   return (
     <SpatialButton
       name={`xr-paint-material-${item.id}`}
       onClick={item.onSelect}
-      position={materialPosition(index)}
+      position={[((index % 4) - 1.5) * 0.3, 0.12 - Math.floor(index / 4) * 0.24, 0]}
       selected={item.selected}
-      size={MATERIAL_TILE_SIZE}
+      size={[0.275, 0.22]}
     >
-      <PanelIcon color={item.icon.color} size={MATERIAL_PREVIEW_SIZE} src={item.icon.src} />
-      <SpatialLine
-        color={item.selected ? XR_WAND_THEME.accentLine : XR_WAND_THEME.border}
-        lineWidth={item.selected ? 1.5 : 0.8}
-        opacity={item.selected ? 0.95 : 0.8}
-        points={MATERIAL_PREVIEW_FRAME_POINTS}
-        transparent
-      />
+      <PanelIcon color={item.icon.color} size={0.14} positionY={0.026} src={item.icon.src} />
       <SpatialText
-        color={XR_WAND_THEME.text}
-        fontSize={materialLabelFontSize(item.label)}
-        maxWidth={0.23}
-        position={[0, -0.07, 0.012]}
+        color={theme.text}
+        fontSize={0.021}
+        maxWidth={0.25}
+        position={[0, -0.078, 0.014]}
+        textAlign="center"
       >
         {item.label}
       </SpatialText>
@@ -65,122 +34,180 @@ function MaterialTile({ item, index }: { item: XRWandPaintItem; index: number })
 
 export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
   const model = adapter.usePaintModel()
-
+  const [choosingCategory, setChoosingCategory] = useState(false)
+  const active = model.brushActive || model.eraserActive
   return (
     <group name="xr-wand-paint-panel">
       <PanelHeader mark={model.mark} title="Paint" width={1.4} />
-      <group position={[0, 0.345, 0]}>
-        <SpatialButton
-          disabled={!model.category.canChange}
-          name="xr-paint-previous-category"
-          onClick={model.category.previous}
-          position={[-0.55, 0, 0]}
-          size={[0.075, 0.06]}
-        >
-          <SpatialText color={XR_WAND_THEME.text} fontSize={0.027} position={[0, 0, 0.012]}>
-            ‹
-          </SpatialText>
-        </SpatialButton>
-        <SpatialText color={XR_WAND_THEME.text} fontSize={0.023} position={[0, 0, 0.012]}>
-          {model.category.label} · {model.category.position}/{model.category.total}
-        </SpatialText>
-        <SpatialButton
-          disabled={!model.category.canChange}
-          name="xr-paint-next-category"
-          onClick={model.category.next}
-          position={[0.55, 0, 0]}
-          size={[0.075, 0.06]}
-        >
-          <SpatialText color={XR_WAND_THEME.text} fontSize={0.027} position={[0, 0, 0.012]}>
-            ›
-          </SpatialText>
-        </SpatialButton>
-      </group>
-      <group position={[0, 0.275, 0]}>
+      <group position={[0, 0.34, 0]}>
         <SpatialButton
           name="xr-paint-start"
           onClick={model.startPainting}
-          position={[-0.245, 0, 0]}
-          selected={model.brushActive}
-          size={[0.44, 0.06]}
+          disabled={!model.canPaint}
+          selected={model.brushActive && model.canPaint}
+          position={[-0.43, 0, 0]}
+          size={[0.39, 0.08]}
         >
-          <SpatialText color={XR_WAND_THEME.text} fontSize={0.019} position={[0, 0, 0.012]}>
-            {model.brushActive ? 'Brush armed' : 'Start painting'}
+          <SpatialText color={theme.text} fontSize={0.026} position={[0, 0, 0.014]}>
+            Paint
           </SpatialText>
         </SpatialButton>
         <SpatialButton
           name="xr-paint-eraser"
           onClick={model.toggleEraser}
-          position={[0.245, 0, 0]}
           selected={model.eraserActive}
-          size={[0.44, 0.06]}
+          position={[0, 0, 0]}
+          size={[0.39, 0.08]}
         >
-          <SpatialText color={XR_WAND_THEME.text} fontSize={0.019} position={[0, 0, 0.012]}>
-            Eraser
+          <SpatialText color={theme.text} fontSize={0.026} position={[0, 0, 0.014]}>
+            Erase
+          </SpatialText>
+        </SpatialButton>
+        <SpatialButton
+          name="xr-paint-done"
+          onClick={model.stopPainting}
+          disabled={!active}
+          position={[0.43, 0, 0]}
+          size={[0.39, 0.08]}
+        >
+          <SpatialText color={theme.text} fontSize={0.026} position={[0, 0, 0.014]}>
+            Done
           </SpatialText>
         </SpatialButton>
       </group>
-      {model.items.length ? (
-        model.items.map((item, index) => <MaterialTile item={item} index={index} key={item.id} />)
-      ) : (
-        <SpatialText
-          color={XR_WAND_THEME.muted}
-          fontSize={0.02}
-          maxWidth={0.45}
-          position={[0, -0.03, 0.012]}
+      <group position={[0, 0.235, 0]}>
+        <SpatialButton
+          name="xr-paint-previous-category"
+          disabled={!model.category.canChange}
+          onClick={model.category.previous}
+          position={[-0.58, 0, 0]}
+          size={[0.085, 0.07]}
         >
-          No materials in this category
+          <SpatialText color={theme.text} fontSize={0.035} position={[0, 0, 0.014]}>
+            ‹
+          </SpatialText>
+        </SpatialButton>
+        <SpatialButton
+          name="xr-paint-categories"
+          onClick={() => setChoosingCategory(!choosingCategory)}
+          selected={choosingCategory}
+          position={[0, 0, 0]}
+          size={[0.99, 0.07]}
+        >
+          <SpatialText color={theme.text} fontSize={0.025} maxWidth={0.9} position={[0, 0, 0.014]}>
+            {choosingCategory
+              ? 'Choose category · Close ×'
+              : `${model.category.label} · ${model.items.length} materials ▾`}
+          </SpatialText>
+        </SpatialButton>
+        <SpatialButton
+          name="xr-paint-next-category"
+          disabled={!model.category.canChange}
+          onClick={model.category.next}
+          position={[0.58, 0, 0]}
+          size={[0.085, 0.07]}
+        >
+          <SpatialText color={theme.text} fontSize={0.035} position={[0, 0, 0.014]}>
+            ›
+          </SpatialText>
+        </SpatialButton>
+      </group>
+      {choosingCategory ? (
+        <SpatialScroll
+          name="xr-paint-categories-scroll"
+          width={1.22}
+          height={0.48}
+          contentHeight={Math.ceil(model.categories.length / 3) * 0.1}
+          position={[-0.012, -0.055, 0]}
+        >
+          {model.categories.map((category, index) => (
+            <SpatialButton
+              key={category.id}
+              name={`xr-paint-category-${category.id}`}
+              selected={category.selected}
+              size={[0.38, 0.085]}
+              position={[((index % 3) - 1) * 0.405, 0.19 - Math.floor(index / 3) * 0.1, 0]}
+              onClick={() => {
+                category.onSelect()
+                setChoosingCategory(false)
+              }}
+            >
+              <SpatialText
+                color={theme.text}
+                fontSize={0.023}
+                maxWidth={0.35}
+                position={[0, 0, 0.014]}
+              >
+                {category.label}
+              </SpatialText>
+            </SpatialButton>
+          ))}
+        </SpatialScroll>
+      ) : model.items.length ? (
+        <SpatialScroll
+          key={model.category.label}
+          name="xr-paint-materials-scroll"
+          width={1.22}
+          height={0.48}
+          contentHeight={Math.ceil(model.items.length / 4) * 0.24}
+          position={[-0.012, -0.055, 0]}
+        >
+          {model.items.map((item, index) => (
+            <MaterialTile key={item.id} item={item} index={index} />
+          ))}
+        </SpatialScroll>
+      ) : (
+        <SpatialText color={theme.muted} fontSize={0.026} position={[0, -0.04, 0.014]}>
+          No materials available
         </SpatialText>
       )}
+      <SpatialLine
+        color={theme.border}
+        opacity={0.6}
+        points={[
+          [-0.63, -0.32, 0.012],
+          [0.63, -0.32, 0.012],
+        ]}
+      />
+      <SpatialText
+        anchorX="left"
+        color={theme.text}
+        fontSize={0.023}
+        maxWidth={1.22}
+        position={[-0.61, -0.35, 0.014]}
+      >
+        {model.eraserActive
+          ? 'Erase · Restore original surface'
+          : model.canPaint
+            ? model.activeMaterialLabel
+            : 'Choose a material to start painting'}
+      </SpatialText>
       <SpatialButton
-        disabled={model.scope.disabled}
         name="xr-paint-scope"
+        disabled={model.scope.disabled}
         onClick={model.scope.onSelect}
-        position={[0, -0.265, 0]}
         selected={model.scope.selected}
-        size={[0.7, 0.055]}
+        position={[0, -0.411, 0]}
+        size={[1.24, 0.067]}
       >
         <SpatialText
-          color={model.scope.disabled ? XR_WAND_THEME.muted : XR_WAND_THEME.text}
-          fontSize={0.018}
-          maxWidth={0.43}
-          position={[0, 0, 0.012]}
+          color={model.scope.disabled ? theme.muted : theme.text}
+          fontSize={0.023}
+          maxWidth={1.16}
+          position={[0, 0, 0.014]}
         >
           {model.scope.label}
+          {model.scope.disabled ? '' : '  ›'}
         </SpatialText>
       </SpatialButton>
-      <group position={[0, -0.35, 0]}>
-        {model.pageCount > 1 ? (
-          <>
-            <SpatialButton
-              disabled={model.page === 0}
-              name="xr-paint-previous-page"
-              onClick={() => model.onPageChange?.(model.page - 1)}
-              position={[-0.28, 0, 0]}
-              size={[0.075, 0.055]}
-            >
-              <SpatialText color={XR_WAND_THEME.text} fontSize={0.027} position={[0, 0, 0.012]}>
-                ‹
-              </SpatialText>
-            </SpatialButton>
-            <SpatialButton
-              disabled={model.page >= model.pageCount - 1}
-              name="xr-paint-next-page"
-              onClick={() => model.onPageChange?.(model.page + 1)}
-              position={[0.28, 0, 0]}
-              size={[0.075, 0.055]}
-            >
-              <SpatialText color={XR_WAND_THEME.text} fontSize={0.027} position={[0, 0, 0.012]}>
-                ›
-              </SpatialText>
-            </SpatialButton>
-          </>
-        ) : null}
-        <SpatialText color={XR_WAND_THEME.muted} fontSize={0.018} position={[0, 0, 0.012]}>
-          {model.activeMaterialLabel}
-          {model.pageCount > 1 ? ` · ${model.page + 1}/${model.pageCount}` : ''}
-        </SpatialText>
-      </group>
+      <SpatialText
+        color={theme.muted}
+        fontSize={0.017}
+        maxWidth={1.24}
+        position={[0, -0.479, 0.014]}
+      >
+        Hold trigger or pinch and drag to browse · Click a surface to apply
+      </SpatialText>
     </group>
   )
 }

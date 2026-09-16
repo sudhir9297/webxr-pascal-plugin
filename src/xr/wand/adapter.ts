@@ -12,9 +12,11 @@ export type XRWandBuildItem = {
 }
 
 export type XRWandBuildModel = {
+  detailMode?: 'paint'
   back?: { label: string; onSelect: () => void }
   items: XRWandBuildItem[]
   secondaryItems?: XRWandBuildItem[]
+  secondaryTitle?: string
   mark: string
   onPageChange?: (page: number) => void
   page: number
@@ -33,6 +35,9 @@ export type XRWandPaintItem = {
 
 export type XRWandPaintModel = {
   activeMaterialLabel: string
+  canPaint: boolean
+  stopPainting: () => void
+  categories: { id: string; label: string; selected: boolean; onSelect: () => void }[]
   brushActive: boolean
   category: {
     canChange: boolean
@@ -65,7 +70,7 @@ export type XRWandAction = {
   onSelect?: () => void
 }
 
-export type XRWandSettingRow =
+export type XRWandSettingRow = { section?: string } & (
   | {
       id: string
       kind: 'action'
@@ -112,8 +117,18 @@ export type XRWandSettingRow =
       unit?: string
       value: number
     }
+)
+
+export type XRWandSettingsOptions = {
+  unpaged?: boolean
+  scope?: 'context' | 'workspace' | 'selection'
+  pageSize?: number
+}
 
 export type XRWandSettingsModel = {
+  contextKey?: string
+  onClearSelection?: () => void
+  contextual?: boolean
   emptyMessage?: string
   headerActions?: XRWandAction[]
   mark: string
@@ -128,5 +143,5 @@ export type XRWandSettingsModel = {
 export type XRWandAdapter = {
   useBuildModel: () => XRWandBuildModel
   usePaintModel: () => XRWandPaintModel
-  useSettingsModel: () => XRWandSettingsModel
+  useSettingsModel: (options?: XRWandSettingsOptions) => XRWandSettingsModel
 }

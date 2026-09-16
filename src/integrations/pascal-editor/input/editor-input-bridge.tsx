@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  type AnyNode,
   type AnyNodeId,
   advanceStroke,
   applyHeightPatch,
@@ -23,6 +24,7 @@ import {
 } from '@pascal-app/core'
 import {
   canDirectMoveNode,
+  preloadRegistryToolModules,
   getSpatialPointerId,
   spatialPointerInput,
   clipTerrainPatchToSite,
@@ -35,6 +37,8 @@ import {
   useInteractionScope,
 } from '@pascal-app/editor'
 import { useViewer } from '@pascal-app/viewer'
+import { useXRWorkspace } from '../../../xr/wand/workspace-store'
+import { shouldRecallWorkspaceForSelection } from './workspace-selection'
 import { rayHitsSpatialUI } from '../../../xr/spatial-ui'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useXR } from '@react-three/xr'
@@ -166,6 +170,13 @@ export function XREditorInputBridge() {
   const origin = useXR((state) => state.origin)
   const scene = useThree((state) => state.scene)
   const gl = useThree((state) => state.gl)
+  const selectedIds = useViewer((state) => state.selection.selectedIds)
+  useEffect(() => {
+    for (const id of selectedIds) {
+      const node = useScene.getState().nodes[id as AnyNodeId]
+      if (node && canDirectMoveNode(node)) void preloadRegistryToolModules(node.type)
+    }
+  }, [selectedIds])
   // Logical XR pointer capture: the source that starts a scene press owns its
   // move/up stream until selectend, even when its ray crosses the wand.
   const capturedInputSource = useRef<XRInputSource | null>(null)
@@ -489,6 +500,8 @@ export function XREditorInputBridge() {
   )
 
   useEffect(() => {
+    if (!session) return
+    let active = true
     const onNodePointerDown = (event: NodeEvent) => {
       if (!isXRNodePointer(event)) return
       if (useEditor.getState().mode !== 'select') return
@@ -509,14 +522,31 @@ export function XREditorInputBridge() {
         selectReleaseGuard.current.markNodeClick(source as XRInputSource)
       }
     }
+    const onSceneSelection = (node: AnyNode) => {
+      if (useEditor.getState().mode !== 'select') return
+      // The resolved selection intent excludes UI/property edits and handles
+      // selection proxies (for example, a clicked child selecting its parent).
+      queueMicrotask(() => {
+        if (!active || !shouldRecallWorkspaceForSelection(
+          node.id,
+          useViewer.getState().selection.selectedIds,
+          useEditor.getState().mode,
+          useInteractionScope.getState().scope.kind,
+        )) return
+        useXRWorkspace.getState().recall('selection')
+      })
+    }
 
     emitter.on('node:pointerdown', onNodePointerDown)
     emitter.on('node:click', onNodeClick)
+    emitter.on('selection:canvas-node-click', onSceneSelection)
     return () => {
+      active = false
       emitter.off('node:pointerdown', onNodePointerDown)
       emitter.off('node:click', onNodeClick)
+      emitter.off('selection:canvas-node-click', onSceneSelection)
     }
-  }, [])
+  }, [session])
 
   useEffect(() => {
     if (!session) return
@@ -590,6 +620,9 @@ export function XREditorInputBridge() {
           ? createGridEvent(event.frame, event.inputSource, 0, true)
           : null
       pulseXRInputSource(event.inputSource, 0.08, 18)
+      if (releaseAction === 'finish-placement-drag') {
+        emitGridEvent('move', event.frame, event.inputSource, 1)
+      }
       emitGridEvent('pointerup', event.frame, event.inputSource, 0)
       dispatchWindowPointerEvent('pointerup', event.inputSource)
 

@@ -1,5 +1,7 @@
 'use client'
 
+import { SpatialMaterial } from './spatial-material'
+
 import { useWebXRSceneLayers } from '../layers'
 import { Children, type ReactNode, useEffect, useMemo } from 'react'
 import { CanvasTexture, SRGBColorSpace } from 'three'
@@ -113,7 +115,7 @@ export function SpatialText({
       raycast={() => undefined}
     >
       <planeGeometry args={[rendered.width, rendered.height]} />
-      <meshBasicMaterial
+      <SpatialMaterial
         alphaTest={0.02}
         depthWrite={false}
         map={rendered.texture}

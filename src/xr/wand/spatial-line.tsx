@@ -1,5 +1,7 @@
 'use client'
 
+import { LineBasicNodeMaterial } from 'three/webgpu'
+import { useSpatialScroll } from './spatial-scroll'
 import { useWebXRSceneLayers } from '../layers'
 import { useEffect, useMemo } from 'react'
 import { BufferGeometry, LineBasicMaterial, type Shape, Line as ThreeLine, Vector3 } from 'three'
@@ -25,20 +27,22 @@ export function SpatialLine({
   renderOrder?: number
   transparent?: boolean
 }) {
+  const scroll = useSpatialScroll()
   const { overlay } = useWebXRSceneLayers()
   const pointKey = points.map((point) => point.join(',')).join(';')
   const line = useMemo(
     () =>
       new ThreeLine(
         new BufferGeometry().setFromPoints(points.map(([x, y, z]) => new Vector3(x, y, z))),
-        new LineBasicMaterial({
+        new (scroll ? LineBasicNodeMaterial : LineBasicMaterial)({
+          ...(scroll ? { maskNode: scroll.maskNode } : {}),
           color,
           linewidth: lineWidth,
           opacity,
           transparent: transparent || opacity < 1,
         }),
       ),
-    [color, lineWidth, opacity, pointKey, transparent],
+    [color, lineWidth, opacity, pointKey, transparent, scroll?.maskNode],
   )
 
   useEffect(

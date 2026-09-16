@@ -20,6 +20,11 @@ import { PointerRingMaterial } from './pointer-ring-material'
 import { isSpatialUIObject, spatialUIInputOwnership } from './spatial-ui'
 
 const NEAR_RAY_HIDE_DISTANCE = 0.2
+// Pascal's ordinary scene geometry (including the wall collision meshes) uses
+// Three's scene layer. The XR pointer has its own private Raycaster; do not
+// rely on that raycaster retaining Three's default mask when the host changes
+// its shared pointer layers for desktop rendering.
+const SCENE_LAYER = 0
 const Z_AXIS = new Vector3(0, 0, 1)
 const ignoreRaycast = () => null
 
@@ -79,6 +84,7 @@ export function DistanceAwareRayPointer({
       ?.layers
     if (!raycastLayers) return
     const mask = raycastLayers.mask
+    raycastLayers.enable(SCENE_LAYER)
     raycastLayers.enable(layers.batched)
     raycastLayers.enable(layers.overlay)
     raycastLayers.enable(layers.zone)

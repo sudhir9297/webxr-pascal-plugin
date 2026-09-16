@@ -8,6 +8,7 @@ import {
 describe('XR wand panel settings', () => {
   beforeEach(() =>
     useXRWandPanelSettings.setState({
+      buildMainPage: 0,
       buildPage: 0,
       buildSection: 'main',
       paintCategoryIndex: 0,
@@ -31,6 +32,26 @@ describe('XR wand panel settings', () => {
     setBuildNavigation('main', -1)
     expect(useXRWandPanelSettings.getState()).toMatchObject({
       buildPage: 0,
+      buildSection: 'main',
+    })
+  })
+
+  test('keeps the main palette page while browsing sub-items', () => {
+    const { setBuildNavigation } = useXRWandPanelSettings.getState()
+    setBuildNavigation('main', 1)
+    setBuildNavigation('roof', 0)
+    setBuildNavigation('roof', 2)
+    expect(useXRWandPanelSettings.getState()).toMatchObject({
+      buildMainPage: 1,
+      buildPage: 2,
+      buildSection: 'roof',
+    })
+    setBuildNavigation('items', 3)
+    expect(useXRWandPanelSettings.getState().buildMainPage).toBe(1)
+    setBuildNavigation('main', useXRWandPanelSettings.getState().buildMainPage)
+    expect(useXRWandPanelSettings.getState()).toMatchObject({
+      buildMainPage: 1,
+      buildPage: 1,
       buildSection: 'main',
     })
   })

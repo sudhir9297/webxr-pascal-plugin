@@ -1,6 +1,7 @@
 'use client'
 
 import { commitParametricNodeFields } from './parametric-node-update'
+import { wallSettings } from './wall-settings'
 
 import {
   type AnyNode,
@@ -22,6 +23,7 @@ import {
   useScene,
 } from '@pascal-app/core'
 import {
+  curveReshapeScope,
   cycleSnappingModeIn,
   emitDeleteSFX,
   getHistoryCommandState,
@@ -59,9 +61,10 @@ import {
 import type { PascalXRWandBindings } from '../bindings'
 import { usePascalXRWandTerrainModel } from './terrain-model'
 
+import type { XRWandSettingsOptions } from '../../../../xr/wand/adapter'
+
 const ROWS_PER_PAGE = 5
 const DEFAULT_SETTINGS_CONTEXT_KEY = 'default-settings'
-const DEFAULT_SETTINGS_PAGES = 2
 const XR_COLORS = ['#888888', '#ffffff', '#18181b', '#ef4444', '#22c55e', '#3b82f6']
 
 function cycleOption(options: readonly unknown[], current: unknown, direction: -1 | 1) {
@@ -134,6 +137,11 @@ function fieldModel({
   row: XRSettingFieldRow
 }): XRWandSettingRow {
   let value = readXRSettingValue(context, row)
+  if (value == null) {
+    const defaults = context.definition.defaults() as Record<string, unknown>
+    const fallback = defaults[String(row.field.key)]
+    value = row.axis == null ? fallback : Array.isArray(fallback) ? fallback[row.axis] : undefined
+  }
   const id = `${String(row.field.key)}${row.axis == null ? '' : `-${row.axis}`}`
 
   if (row.field.kind === 'number' || row.field.kind === 'vec3') {
@@ -148,7 +156,7 @@ function fieldModel({
       onChange: (next) => onChange(row, next),
       step: row.field.kind === 'number' ? (row.field.step ?? 0.1) : 0.1,
       unit: row.field.kind === 'number' ? row.field.unit : undefined,
-      value: Math.max(min, Math.min(max, typeof value === 'number' ? value : min)),
+      value: Math.max(min, Math.min(max, typeof value === 'number' ? value : Math.max(0, min))),
     }
   }
   if (row.field.kind === 'boolean') {
@@ -170,10 +178,10 @@ function fieldModel({
   if (row.field.kind === 'enum') options = row.field.options
   if (row.field.kind === 'color') options = XR_COLORS
   if (row.field.kind === 'material') {
-    options = materials.map((material) => material.id)
+    options = [null, ...materials.map((material) => material.id)]
     const selectedId = getLibraryMaterialIdFromRef(value as never)
     displayValue = materials.find((material) => material.id === selectedId)?.label ?? 'Default'
-    mapValue = (next) => toLibraryMaterialRef(String(next))
+    mapValue = (next) => next === null ? undefined : toLibraryMaterialRef(String(next))
     value = selectedId
   }
   if (row.field.kind === 'ref') {
@@ -237,7 +245,11 @@ function registryRowModel(
   }
 }
 
-export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XRWandSettingsModel {
+export function usePascalXRWandSettingsModel(
+  bindings: PascalXRWandBindings,
+  options?: XRWandSettingsOptions,
+): XRWandSettingsModel {
+  const pageSize = options?.pageSize ?? ROWS_PER_PAGE
   const session = useXR((state) => state.session)
   const terrainModel = usePascalXRWandTerrainModel()
   const paginationKey = useXRWandPanelSettings((state) => state.settingsContextKey)
@@ -286,8 +298,14 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
   }, [materialVersion])
   const referenceNodes = useMemo(() => Object.values(nodes).filter(Boolean) as AnyNode[], [nodes])
   const context = useMemo(
-    () => resolveXRSettingsContext({ mode, selectedNode, tool, toolDefaults }),
-    [mode, selectedNode, tool, toolDefaults],
+    () =>
+      resolveXRSettingsContext({
+        mode: options?.scope === 'selection' ? 'select' : mode,
+        selectedNode,
+        tool,
+        toolDefaults,
+      }),
+    [mode, selectedNode, tool, toolDefaults, options?.scope],
   )
 
   const resolvedBuildingId =
@@ -305,7 +323,8 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
   }, [nodes, resolvedBuildingId])
   const activeLevel = levels.find((level) => level.id === selection.levelId) ?? levels[0]
 
-  if (mode === 'terrain-sculpt') return terrainModel
+  if (options?.scope !== 'workspace' && options?.scope !== 'selection' && mode === 'terrain-sculpt')
+    return { ...terrainModel, contextual: true }
 
   const deleteSelectedNode = () => {
     if (!(selectedId && selectedNode && context?.source === 'node')) return
@@ -324,7 +343,44 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
     }
   }
 
-  if (context?.node.type === 'roof' && context.source === 'node') {
+  if (
+    options?.scope !== 'workspace' &&
+    context?.source === 'node' &&
+    context.node.type === 'wall'
+  ) {
+    const wall = context.node
+    const rows = wallSettings(
+      wall,
+      nodes,
+      (patch) => commitParametricNodeFields(wall.id, patch),
+      () => {
+        triggerSFX('sfx:item-pick')
+        useInteractionScope.getState().begin(curveReshapeScope(wall.id))
+        setSelection({ selectedIds: [] })
+      },
+    )
+    const current = options?.unpaged
+      ? { currentPage: 0, pageCount: 1, items: rows }
+      : getPage(rows, paginationKey === context.key ? paginationPage : 0, pageSize)
+    return {
+      contextKey: context.key,
+      contextual: true,
+      title: wall.name || 'Wall',
+      mark: `${rows.length} controls`,
+      onClearSelection: () => setSelection({ selectedIds: [] }),
+      onDelete: deleteSelectedNode,
+      rows: current.items,
+      page: current.currentPage,
+      pageCount: current.pageCount,
+      onPageChange: (page) => setSettingsNavigation(context.key, page),
+    }
+  }
+
+  if (
+    options?.scope !== 'workspace' &&
+    context?.node.type === 'roof' &&
+    context.source === 'node'
+  ) {
     void registryVersion
     const roof = context.node as RoofNode
     const parsedRoofType = RoofTypeSchema.safeParse(
@@ -336,7 +392,11 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
     )
     const segmentSet = new Set<string>(segmentIds)
     let segmentIndex = 0
-    const actions = [
+    const actions: XRWandSettingRow[] = [
+      ...collectXRSettingRows(context).map(row => ({
+        ...registryRowModel(row, context, materials, referenceNodes, update),
+        section: row.kind === 'field' ? row.group : 'Actions',
+      })),
       ...bindings.getRoofFootprintSources(roofType).map((source) => ({
         id: `roof-draw-from-${source.value}`,
         kind: 'action' as const,
@@ -388,8 +448,14 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
     ]
     const key = `node:${roof.id}:roof-actions`
     const page = paginationKey === key ? paginationPage : 0
-    const current = getPage(actions, page, ROWS_PER_PAGE)
+    const current = options?.unpaged
+      ? { currentPage: 0, pageCount: 1, items: actions }
+      : getPage(actions, page, pageSize)
     return {
+      contextKey: context.key,
+      onClearSelection:
+        context.source === 'node' ? () => setSelection({ selectedIds: [] }) : undefined,
+      contextual: true,
       mark: `${actions.length} controls`,
       onDelete: deleteSelectedNode,
       onPageChange: (nextPage) => setSettingsNavigation(key, nextPage),
@@ -400,15 +466,21 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
     }
   }
 
-  if (context) {
+  if (options?.scope !== 'workspace' && context) {
     const sourceRows = [
       ...collectRoofActionRows(context.node, bindings),
       ...collectXRSettingRows(context),
     ]
     const key = context.key
     const page = paginationKey === key ? paginationPage : 0
-    const current = getPage(sourceRows, page, ROWS_PER_PAGE)
+    const current = options?.unpaged
+      ? { currentPage: 0, pageCount: 1, items: sourceRows }
+      : getPage(sourceRows, page, pageSize)
     return {
+      contextKey: context.key,
+      onClearSelection:
+        context.source === 'node' ? () => setSelection({ selectedIds: [] }) : undefined,
+      contextual: true,
       emptyMessage: 'No spatial settings are exposed for this item yet.',
       mark: `${sourceRows.length} controls`,
       onDelete:
@@ -418,9 +490,10 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
       onPageChange: (nextPage) => setSettingsNavigation(key, nextPage),
       page: current.currentPage,
       pageCount: current.pageCount,
-      rows: current.items.map((row) =>
-        registryRowModel(row, context, materials, referenceNodes, update),
-      ),
+      rows: current.items.map((row) => ({
+        ...registryRowModel(row, context, materials, referenceNodes, update),
+        section: row.kind === 'field' ? row.group : 'Actions',
+      })),
       title: context.title,
     }
   }
@@ -453,93 +526,87 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
     })
   }
   const page = paginationKey === DEFAULT_SETTINGS_CONTEXT_KEY ? paginationPage : 0
-  const rows: XRWandSettingRow[] =
-    page === 0
-      ? [
-          {
-            id: 'floor',
-            kind: 'choice',
-            label: 'Floor',
-            onSelect: levels.length ? cycleFloor : undefined,
-            value: activeLevel ? getLevelDisplayName(activeLevel) : 'No floors',
-          },
-          {
-            actions: [
-              {
-                id: 'add-floor',
-                label: 'Add floor',
-                onSelect: () =>
-                  addFloorAt(
-                    levels.length ? Math.max(...levels.map((entry) => entry.level)) + 1 : 0,
-                  ),
-              },
-              {
-                id: 'add-basement',
-                label: 'Add basement',
-                onSelect: () =>
-                  addFloorAt(
-                    levels.length ? Math.min(...levels.map((entry) => entry.level)) - 1 : -1,
-                  ),
-              },
-            ],
-            id: 'floor-actions',
-            kind: 'actions',
-          },
-          {
-            disabled: !activeLevel || activeLevel.level === 0,
-            id: 'remove-floor',
-            kind: 'action',
-            label: 'Remove selected floor',
-            onSelect: removeFloor,
-          },
-          {
-            id: 'editor-mode',
-            kind: 'choice',
-            label: 'Editor mode',
-            value: mode,
-          },
-        ]
-      : [
-          {
-            id: 'grid-snap',
-            kind: 'choice',
-            label: 'Grid snap',
-            onSelect: cycleGridSnapStep,
-            value: `${gridSnapStep} m`,
-          },
-          {
-            id: 'player-mode',
-            kind: 'choice',
-            label: 'XR scale',
-            onSelect: toggleXRPlayerMode,
-            value: playerMode === XR_PLAYER_MODES.GOD ? 'God' : 'Human',
-          },
-          {
-            id: 'panel-scale',
-            kind: 'stepper',
-            label: 'Panel size',
-            max: XR_WAND_PANEL_SCALE_MAX,
-            min: XR_WAND_PANEL_SCALE_MIN,
-            onChange: setPanelScale,
-            step: XR_WAND_PANEL_SCALE_STEP,
-            value: panelScale,
-          },
-          {
-            id: 'wall-snap',
-            kind: 'choice',
-            label: 'Wall snap',
-            onSelect: () => setSnappingMode('wall', cycleSnappingModeIn('wall', wallSnappingMode)),
-            value: getSnappingModeLabel(wallSnappingMode),
-          },
-          {
-            id: 'exit-vr',
-            kind: 'action',
-            label: 'Exit VR',
-            onSelect: () => {
-              void session?.end().catch(console.error)
-            },
-          },
-        ]
+  const rows: XRWandSettingRow[] = [
+    {
+      id: 'floor',
+      kind: 'choice',
+      label: 'Floor',
+      onSelect: levels.length ? cycleFloor : undefined,
+      value: activeLevel ? getLevelDisplayName(activeLevel) : 'No floors',
+    },
+    {
+      actions: [
+        {
+          id: 'add-floor',
+          disabled: !resolvedBuildingId,
+          label: 'Add floor',
+          onSelect: () =>
+            addFloorAt(levels.length ? Math.max(...levels.map((entry) => entry.level)) + 1 : 0),
+        },
+        {
+          id: 'add-basement',
+          disabled: !resolvedBuildingId,
+          label: 'Add basement',
+          onSelect: () =>
+            addFloorAt(levels.length ? Math.min(...levels.map((entry) => entry.level)) - 1 : -1),
+        },
+      ],
+      id: 'floor-actions',
+      kind: 'actions',
+    },
+    {
+      disabled: !activeLevel || activeLevel.level === 0,
+      id: 'remove-floor',
+      kind: 'action',
+      label: 'Remove selected floor',
+      onSelect: removeFloor,
+    },
+    {
+      id: 'editor-mode',
+      kind: 'choice',
+      label: 'Editor mode',
+      value: mode,
+    },
+    {
+      id: 'grid-snap',
+      kind: 'choice',
+      label: 'Grid snap',
+      onSelect: cycleGridSnapStep,
+      value: `${gridSnapStep} m`,
+    },
+    {
+      id: 'player-mode',
+      kind: 'choice',
+      label: 'XR scale',
+      onSelect: toggleXRPlayerMode,
+      value: playerMode === XR_PLAYER_MODES.GOD ? 'God' : 'Human',
+    },
+    {
+      id: 'panel-scale',
+      kind: 'stepper',
+      label: 'Panel size',
+      max: XR_WAND_PANEL_SCALE_MAX,
+      min: XR_WAND_PANEL_SCALE_MIN,
+      onChange: setPanelScale,
+      step: XR_WAND_PANEL_SCALE_STEP,
+      value: panelScale,
+    },
+    {
+      id: 'wall-snap',
+      kind: 'choice',
+      label: 'Wall snap',
+      onSelect: () => setSnappingMode('wall', cycleSnappingModeIn('wall', wallSnappingMode)),
+      value: getSnappingModeLabel(wallSnappingMode),
+    },
+    {
+      id: 'exit-vr',
+      kind: 'action',
+      label: 'Exit VR',
+      onSelect: () => {
+        void session?.end().catch(console.error)
+      },
+    },
+  ]
 
   return {
     headerActions: [
@@ -562,11 +629,16 @@ export function usePascalXRWandSettingsModel(bindings: PascalXRWandBindings): XR
         onSelect: requestGodScaleReset,
       },
     ],
-    mark: 'selection-aware',
+    contextKey: DEFAULT_SETTINGS_CONTEXT_KEY,
+    mark:
+      selection.selectedIds.length > 1 ? `${selection.selectedIds.length} selected` : 'Workspace',
     onPageChange: (nextPage) => setSettingsNavigation(DEFAULT_SETTINGS_CONTEXT_KEY, nextPage),
-    page,
-    pageCount: DEFAULT_SETTINGS_PAGES,
-    rows,
+    page: options?.unpaged ? 0 : getPage(rows, page, pageSize).currentPage,
+    pageCount: options?.unpaged ? 1 : getPage(rows, page, pageSize).pageCount,
+    rows: (options?.unpaged ? rows : getPage(rows, page, pageSize).items).map((row) => ({
+      ...row,
+      section: ['floor', 'floor-actions', 'remove-floor'].includes(row.id) ? 'Floors' : 'Workspace',
+    })),
     title: 'Settings',
   }
 }

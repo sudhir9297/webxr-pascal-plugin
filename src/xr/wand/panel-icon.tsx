@@ -1,5 +1,7 @@
 'use client'
 
+import { SpatialMaterial } from './spatial-material'
+
 import { useWebXRSceneLayers } from '../layers'
 import { useTexture } from '@react-three/drei'
 import { Component, type ReactNode, Suspense } from 'react'
@@ -10,10 +12,19 @@ function TextureIcon({ positionY, size, src }: { positionY: number; size: number
   const { overlay } = useWebXRSceneLayers()
   const texture = useTexture(src)
   texture.colorSpace = SRGBColorSpace
+  const image = texture.image as { width?: number; height?: number }
+  const aspect = (image?.width || 1) / (image?.height || 1)
+  const width = size * Math.min(1, aspect)
+  const height = size / Math.max(1, aspect)
   return (
-    <mesh layers={overlay} position={[0, positionY, 0.012]} renderOrder={6} raycast={() => undefined}>
-      <planeGeometry args={[size, size]} />
-      <meshBasicMaterial alphaTest={0.05} map={texture} toneMapped={false} transparent />
+    <mesh
+      layers={overlay}
+      position={[0, positionY, 0.012]}
+      renderOrder={6}
+      raycast={() => undefined}
+    >
+      <planeGeometry args={[width, height]} />
+      <SpatialMaterial alphaTest={0.05} map={texture} toneMapped={false} transparent />
     </mesh>
   )
 }
@@ -21,9 +32,14 @@ function TextureIcon({ positionY, size, src }: { positionY: number; size: number
 function ColorIcon({ color, positionY, size }: { color: string; positionY: number; size: number }) {
   const { overlay } = useWebXRSceneLayers()
   return (
-    <mesh layers={overlay} position={[0, positionY, 0.012]} renderOrder={6} raycast={() => undefined}>
+    <mesh
+      layers={overlay}
+      position={[0, positionY, 0.012]}
+      renderOrder={6}
+      raycast={() => undefined}
+    >
       <planeGeometry args={[size, size]} />
-      <meshBasicMaterial color={color} toneMapped={false} />
+      <SpatialMaterial color={color} toneMapped={false} />
     </mesh>
   )
 }

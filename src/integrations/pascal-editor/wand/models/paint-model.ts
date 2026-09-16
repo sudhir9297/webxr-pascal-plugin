@@ -17,11 +17,9 @@ import {
   paintScopeLabel,
   useEditor,
 } from '@pascal-app/editor'
-import { getPage, useXRWandPanelSettings, type XRWandPaintModel } from '../../../../xr/wand'
+import { useXRWandPanelSettings, type XRWandPaintModel } from '../../../../xr/wand'
 import { useMemo, useRef, useSyncExternalStore } from 'react'
 import type { PascalXRWandBindings } from '../bindings'
-
-const MATERIALS_PER_PAGE = 6
 
 function labelCategory(category: string) {
   return `${category.charAt(0).toUpperCase()}${category.slice(1)}`
@@ -29,7 +27,6 @@ function labelCategory(category: string) {
 
 export function usePascalXRWandPaintModel(bindings: PascalXRWandBindings): XRWandPaintModel {
   const categoryIndex = useXRWandPanelSettings((state) => state.paintCategoryIndex)
-  const page = useXRWandPanelSettings((state) => state.paintPage)
   const setPaintNavigation = useXRWandPanelSettings((state) => state.setPaintNavigation)
   const mode = useEditor((state) => state.mode)
   const activePaintMaterial = useEditor((state) => state.activePaintMaterial)
@@ -59,17 +56,21 @@ export function usePascalXRWandPaintModel(bindings: PascalXRWandBindings): XRWan
   const category = (availableCategories[activeCategoryIndex] ??
     availableCategories[0] ??
     'colors') as MaterialCategory
-  const current = getPage(getMaterialsForCategory(category), page, MATERIALS_PER_PAGE)
+  const materials = getMaterialsForCategory(category)
   const selectedId = getLibraryMaterialIdFromRef(activePaintMaterial?.materialPreset)
   const paintContext = paintHover ?? lastPaintHover.current
-  const paintEnabled = paintEraser || hasActivePaintMaterial(activePaintMaterial)
+  const paintEnabled =
+    mode === 'material-paint' && (paintEraser || hasActivePaintMaterial(activePaintMaterial))
   const availableScopes = paintContext?.scopes ?? ['single']
   const effectivePaintScope = availableScopes.includes(paintScope) ? paintScope : 'single'
-  const scopeLabel = !paintEnabled
-    ? 'Choose a material'
-    : paintContext
-      ? `Paint: ${paintScopeLabel(effectivePaintScope, paintContext)}`
-      : 'Aim at a surface'
+  const scopeLabel =
+    mode !== 'material-paint'
+      ? 'Choose a material or activate Paint / Erase'
+      : !paintEnabled
+        ? 'Choose a material'
+        : paintContext
+          ? `${paintEraser ? 'Erase' : 'Paint'}: ${paintScopeLabel(effectivePaintScope, paintContext)}`
+          : 'Aim at a surface'
 
   const changeCategory = (direction: -1 | 1) => {
     if (availableCategories.length < 2) return
@@ -80,9 +81,16 @@ export function usePascalXRWandPaintModel(bindings: PascalXRWandBindings): XRWan
   }
 
   return {
-    activeMaterialLabel:
-      current.items.length > 0 ? getActivePaintMaterialLabel(activePaintMaterial) : 'No materials',
-    brushActive: mode === 'material-paint',
+    activeMaterialLabel: getActivePaintMaterialLabel(activePaintMaterial),
+    canPaint: hasActivePaintMaterial(activePaintMaterial),
+    stopPainting: bindings.activateSelectMode,
+    categories: availableCategories.map((value, index) => ({
+      id: value,
+      label: labelCategory(value),
+      selected: value === category,
+      onSelect: () => setPaintNavigation(index, 0),
+    })),
+    brushActive: mode === 'material-paint' && !paintEraser,
     category: {
       canChange: availableCategories.length > 1,
       label: labelCategory(category),
@@ -91,8 +99,8 @@ export function usePascalXRWandPaintModel(bindings: PascalXRWandBindings): XRWan
       previous: () => changeCategory(-1),
       total: availableCategories.length,
     },
-    eraserActive: paintEraser,
-    items: current.items.map((item) => ({
+    eraserActive: mode === 'material-paint' && paintEraser,
+    items: materials.map((item) => ({
       icon: {
         color: item.previewColor ?? item.preset.mapProperties.color,
         src: item.previewThumbnailUrl,
@@ -106,22 +114,25 @@ export function usePascalXRWandPaintModel(bindings: PascalXRWandBindings): XRWan
           sourceTarget: activePaintTarget,
         })
       },
-      selected: selectedId === item.id,
+      selected: !paintEraser && selectedId === item.id,
     })),
-    mark: mode === 'material-paint' ? activePaintTarget : 'ready',
+    mark: mode === 'material-paint' ? (paintEraser ? 'Erasing' : 'Painting') : 'Browse materials',
     onPageChange: (nextPage) => setPaintNavigation(activeCategoryIndex, nextPage),
-    page: current.currentPage,
-    pageCount: current.pageCount,
+    page: 0,
+    pageCount: 1,
     scope: {
       disabled: !paintEnabled || !paintContext || availableScopes.length <= 1,
       label: scopeLabel,
       onSelect: () => setPaintScope(cyclePaintScope(effectivePaintScope, availableScopes)),
       selected: availableScopes.length > 1 && effectivePaintScope !== 'single',
     },
-    startPainting: bindings.activatePaintMode,
+    startPainting: () => {
+      bindings.activatePaintMode()
+      setPaintEraser(false)
+    },
     toggleEraser: () => {
       bindings.activatePaintMode()
-      setPaintEraser(!paintEraser)
+      setPaintEraser(mode !== 'material-paint' || !paintEraser)
     },
   }
 }
