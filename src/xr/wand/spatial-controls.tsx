@@ -168,13 +168,24 @@ export function PanelFace({
     <>
       <mesh
         layers={overlay}
+        name="xr-panel-background"
         onClick={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-        onPointerUp={(event) => event.stopPropagation()}
+        onPointerDown={(event) => {
+          event.stopPropagation()
+          event.object.setPointerCapture?.(event.pointerId)
+        }}
+        onPointerUp={(event) => {
+          event.stopPropagation()
+          event.object.releasePointerCapture?.(event.pointerId)
+        }}
+        onPointerCancel={(event) => {
+          event.stopPropagation()
+          event.object.releasePointerCapture?.(event.pointerId)
+        }}
         position={[0, 0, -0.012]}
       >
         <shapeGeometry args={[shape, 8]} />
-        <SpatialMaterial color={panel} depthWrite opacity={1} toneMapped={false} />
+        <SpatialMaterial color={panel} depthWrite opacity={1} toneMapped={false} side={DoubleSide} />
       </mesh>
       <SpatialLine color={border} lineWidth={1.4} opacity={0.9} points={points} />
     </>

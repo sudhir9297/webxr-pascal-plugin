@@ -28,6 +28,23 @@ describe('spatial UI input routing', () => {
     mesh.material.dispose()
   })
 
+  test('the wrist shortcut blocks scene input even when the panel is hidden', () => {
+    const scene = new Group()
+    const panel = new Group()
+    panel.name = 'xr-editor-wand-panel'
+    panel.visible = false
+    const shortcut = new Group()
+    shortcut.name = 'xr-workspace-hand-shortcut'
+    const mesh = new Mesh(new BoxGeometry(0.1, 0.1, 0.01), new MeshBasicMaterial())
+    mesh.position.z = -0.5
+    shortcut.add(mesh)
+    scene.add(panel, shortcut)
+    expect(isSpatialUIObject(mesh)).toBe(true)
+    expect(rayHitsSpatialUI(scene, new Raycaster(new Vector3(), new Vector3(0, 0, -1)))).toBe(true)
+    mesh.geometry.dispose()
+    mesh.material.dispose()
+  })
+
   test('retains UI press ownership off the panel and releases on tracking loss', () => {
     const ownership = new SpatialUIInputOwnership()
     const left = { handedness: 'left' } as XRInputSource

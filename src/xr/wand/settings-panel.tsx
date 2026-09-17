@@ -320,7 +320,7 @@ export function XRWandSettingsPanel({ adapter, panelPlacement = false }: {
         kind: 'action' as const,
         id: 'bring-workspace-here',
         section: 'Panel placement',
-        label: 'Bring workspace here · Keep panel offset',
+        label: 'Bring workspace here · Reset panel offset',
         onSelect: () => useXRWorkspace.getState().recall(),
       },
       {

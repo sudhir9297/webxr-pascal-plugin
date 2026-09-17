@@ -50,4 +50,17 @@ describe('isDirectR3FPointerTarget', () => {
   test('rejects geometry with no eventful ancestor', () => {
     expect(isR3FPointerTarget(new Mesh())).toBe(false)
   })
+
+  test('hidden or disabled panels cannot steal floor drawing rays', () => {
+    const panel = new Group()
+    const button = new Mesh()
+    markInteractive(button)
+    panel.add(button)
+    expect(isR3FPointerTarget(button)).toBe(true)
+    panel.visible = false
+    expect(isR3FPointerTarget(button)).toBe(false)
+    panel.visible = true
+    panel.pointerEvents = 'none'
+    expect(isR3FPointerTarget(button)).toBe(false)
+  })
 })

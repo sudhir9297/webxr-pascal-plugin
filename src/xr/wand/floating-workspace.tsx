@@ -27,6 +27,10 @@ import {
   WorkspaceDrag,
 } from './workspace-placement'
 import { useXRWorkspace } from './workspace-store'
+import { WorkspaceButton } from './workspace-button'
+import { WorkspaceHandShortcut } from './workspace-hand-shortcut'
+import { WorkspaceResize } from './workspace-resize'
+import { WorkspaceResizeHandles } from './workspace-resize-handles'
 
 type PointerDownEvent = ThreeEvent<PointerEvent>
 type WorkspaceTab = 'paint' | 'build' | 'settings'
@@ -70,7 +74,9 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   const layout = useRef(new WorkspaceLayout())
   const handledReset = useRef(-1)
   const root = useRef<Group>(null)
-  const handle = useRef<Mesh>(null)
+  const activeHandle = useRef<Mesh | null>(null)
+  const resize = useRef(new WorkspaceResize())
+  const [resizeHandle, setResizeHandle] = useState<string | null>(null)
   const session = useXR((state) => state.session)
   const referenceSpace = useXR((state) => state.originReferenceSpace)
   const origin = useXR((state) => state.origin)
@@ -79,7 +85,9 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   const { overlay } = useWebXRSceneLayers()
   const panelScale = useXRWandPanelSettings((state) => state.panelScale)
   const handledRecall = useRef(-1)
-  const recallButtonPressed = useRef(false)
+  const recallButton = useRef(new WorkspaceButton())
+  const previousMode = useRef(playerMode)
+  const visible = useXRWorkspace((state) => state.visible)
   const drag = useRef(new WorkspaceDrag())
   const dragSource = useRef<XRInputSource | null>(null)
   const eye = useRef(new Vector3())
@@ -90,29 +98,45 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   const movingToSelection = useRef(false)
   const target = useRef(new Vector3())
   const localPoint = useRef(new Vector3())
-  const localEye = useRef(new Vector3())
   const [tab, setTab] = useState<WorkspaceTab>('build')
 
   const endDrag = useCallback(() => {
-    const pointerId = drag.current.pointerId
+    const pointerId = drag.current.pointerId ?? resize.current.pointerId
     if (pointerId === null) return
     drag.current.end(pointerId)
-    handle.current?.releasePointerCapture?.(pointerId)
+    resize.current.end(pointerId)
+    activeHandle.current?.releasePointerCapture?.(pointerId)
+    activeHandle.current = null
+    setResizeHandle(null)
     dragSource.current = null
     if (root.current) root.current.userData.dragging = false
   }, [])
 
-  useEffect(() => endDrag(), [endDrag, playerMode])
+  useEffect(() => {
+    endDrag()
+    if (previousMode.current !== playerMode) {
+      previousMode.current = playerMode
+      useXRWorkspace.getState().modeChanged()
+    }
+  }, [endDrag, playerMode])
+
+  useEffect(() => {
+    if (!visible) endDrag()
+  }, [endDrag, visible])
 
   useEffect(() => {
     handledRecall.current = -1
     viewerTracked.current = false
-    recallButtonPressed.current = false
+    recallButton.current.reset()
+    if (session) useXRWorkspace.getState().recall()
     const endSelection = (event: XRInputSourceEvent) => {
       if (event.inputSource === dragSource.current) endDrag()
     }
     const visibilityChanged = () => {
-      if (session?.visibilityState !== 'visible') endDrag()
+      if (session?.visibilityState !== 'visible') {
+        endDrag()
+        recallButton.current.reset()
+      }
     }
     session?.addEventListener('selectend', endSelection)
     session?.addEventListener('end', endDrag)
@@ -134,21 +158,28 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
     viewerTracked.current = !!pose && !!origin
     if (!pose || !origin) {
       endDrag()
+      recallButton.current.reset()
       return
     }
     origin.updateWorldMatrix(true, false)
     viewerMatrix.current.fromArray(pose.transform.matrix).premultiply(origin.matrixWorld)
     eye.current.setFromMatrixPosition(viewerMatrix.current)
     direction.current.set(0, 0, -1).transformDirection(viewerMatrix.current)
-    const pressed = isQuestYPressed(controller)
-    if (pressed && !recallButtonPressed.current) useXRWorkspace.getState().recall()
-    recallButtonPressed.current = pressed
+    if (!controller || session.visibilityState !== 'visible' ||
+      (frame && referenceSpace && !frame.getPose(controller.inputSource.targetRaySpace, referenceSpace))) {
+      recallButton.current.reset()
+    } else {
+      const action = recallButton.current.update(isQuestYPressed(controller), delta)
+      if (action === 'toggle') useXRWorkspace.getState().toggle()
+      if (action === 'rescue') useXRWorkspace.getState().recall()
+    }
 
-    if (drag.current.pointerId !== null && !handle.current?.hasPointerCapture?.(drag.current.pointerId)) endDrag()
+    const activePointer = drag.current.pointerId ?? resize.current.pointerId
+    if (activePointer !== null && !activeHandle.current?.hasPointerCapture?.(activePointer)) endDrag()
 
     const source = dragSource.current
     if (
-      drag.current.pointerId !== null &&
+      activePointer !== null &&
       source &&
       (!session ||
         !Array.from(session.inputSources).includes(source) ||
@@ -157,10 +188,13 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
       endDrag()
 
     // Read the store here so controller recall and pointer recall share one path.
-    const { recallRequest: request, recallReason, resetPositionRequest } = useXRWorkspace.getState()
+    const { recallRequest: request, recallReason, resetPositionRequest, visible: isVisible } = useXRWorkspace.getState()
+    group.visible = isVisible
+    group.pointerEvents = isVisible ? 'auto' : 'none'
+    if (!isVisible) endDrag()
     const initial = handledRecall.current === -1
     const recalled = handledRecall.current !== request &&
-      (drag.current.pointerId === null || recallReason === 'manual')
+      ((drag.current.pointerId === null && resize.current.pointerId === null) || recallReason === 'manual')
     if (recalled) endDrag()
     rigDirection.current.set(0, 0, -1).transformDirection(origin.matrixWorld)
     follow.current.update(eye.current, rigDirection.current)
@@ -170,10 +204,9 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
       const placement = selection ? selectionWorkspacePosition : placeWorkspace
       placement(eye.current, direction.current, target.current)
       workspaceParentPoint(workspace.current, target.current, target.current)
-      layout.current.recall(target.current, initial)
+      layout.current.recall(target.current, initial || recallReason === 'manual')
       movingToSelection.current = selection
       if (selection) setTab(current => current === 'settings' ? 'settings' : 'build')
-      group.visible = true
       handledRecall.current = request
     }
     if (handledReset.current !== resetPositionRequest) {
@@ -183,24 +216,28 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
       }
       handledReset.current = resetPositionRequest
     }
+    // Keep the resize plane and center stable while a corner owns the pointer.
+    if (resize.current.pointerId !== null) return
     layout.current.update(delta, movingToSelection.current ? 7 : 24)
-    layout.current.apply(workspace.current, group, eye.current, initial ? undefined : delta)
+    layout.current.apply(workspace.current, group, eye.current,
+      initial || (recalled && recallReason === 'manual') ? undefined : delta)
   })
 
   const startDrag = (event: PointerDownEvent) => {
     event.stopPropagation()
-    if (!root.current || !viewerTracked.current) return
+    if (resize.current.pointerId !== null) return
+    if (!root.current || !viewerTracked.current || !useXRWorkspace.getState().visible) return
     if (
       !drag.current.start(
         event.pointerId,
         workspaceParentPoint(root.current, event.point, localPoint.current),
         root.current.position,
-        workspaceParentPoint(root.current, eye.current, localEye.current),
       )
     )
       return
     movingToSelection.current = false
     layout.current.startDrag()
+    activeHandle.current = event.object as Mesh
     event.object.setPointerCapture?.(event.pointerId)
     root.current.userData.dragging = true
     if ('pointerState' in event && isXRInputSourceState(event.pointerState)) {
@@ -210,83 +247,127 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
   const moveDrag = (event: PointerDownEvent) => {
     event.stopPropagation()
-    if (!root.current || !viewerTracked.current) return
+    if (!root.current || !viewerTracked.current || !useXRWorkspace.getState().visible) return
     workspaceParentPoint(root.current, event.point, localPoint.current)
-    workspaceParentPoint(root.current, eye.current, localEye.current)
-    if (drag.current.move(event.pointerId, localPoint.current, localEye.current, target.current)) {
+    if (drag.current.move(event.pointerId, localPoint.current, target.current)) {
       layout.current.dragTo(target.current)
     }
   }
 
   const finishDrag = (event: PointerDownEvent) => {
     event.stopPropagation()
-    if (drag.current.pointerId === event.pointerId) endDrag()
+    if ((drag.current.pointerId ?? resize.current.pointerId) === event.pointerId) endDrag()
+  }
+
+  const startResize = (event: PointerDownEvent) => {
+    event.stopPropagation()
+    const group = root.current
+    if (!group || !viewerTracked.current || !useXRWorkspace.getState().visible || drag.current.pointerId !== null) return
+    group.updateWorldMatrix(true, false)
+    if (!resize.current.start(event.pointerId, event.point, group.matrixWorld,
+      useXRWandPanelSettings.getState().panelScale)) return
+    layout.current.startDrag()
+    movingToSelection.current = false
+    activeHandle.current = event.object as Mesh
+    event.object.setPointerCapture?.(event.pointerId)
+    group.userData.dragging = true
+    setResizeHandle(event.object.name)
+    if ('pointerState' in event && isXRInputSourceState(event.pointerState)) {
+      dragSource.current = event.pointerState.inputSource
+    }
+  }
+
+  const moveResize = (event: PointerDownEvent) => {
+    event.stopPropagation()
+    if (!viewerTracked.current || !useXRWorkspace.getState().visible) return
+    const scale = resize.current.move(event.pointerId, event.point)
+    if (scale !== undefined) useXRWandPanelSettings.getState().setPanelScale(scale)
   }
 
   return (
-    <group ref={anchor} name="xr-player-ui-anchor">
-      <group ref={workspace} name="xr-workspace-recall-group">
-        <group
-          ref={root}
-          name={XR_WAND_PANEL_INPUT_NAME}
-          visible={false}
-          pointerEventsOrder={100}
-          pointerEventsType={(pointerId, pointerType) =>
-            pointerType !== 'grab' &&
-            (drag.current.pointerId === null || drag.current.pointerId === pointerId)
-          }
-        >
-          <group scale={WORKSPACE_CONTENT_SCALE * panelScale}>
-            <group name="xr-workspace-content">
-              <PanelFace width={1.4} height={1.04} />
-              {tab === 'paint' && <XRWandPaintPanel adapter={adapter} />}
-              {tab === 'build' && <XRWandBuildPanel adapter={adapter} />}
-              {tab === 'settings' && <XRWandSettingsPanel adapter={adapter} panelPlacement />}
-            </group>
-            <group name="xr-workspace-tool-rail" position={[-0.8, 0, 0]}>
-              <PanelFace width={0.16} height={1.04} />
-              {TABS.map((value, index) => (
-                <RailButton
-                  key={value}
-                  iconSrc={`/icons/${value}.webp`}
-                  name={`xr-workspace-tab-${value}`}
-                  y={RAIL_TOP - RAIL_ITEM_HEIGHT / 2 - index * (RAIL_ITEM_HEIGHT + RAIL_ITEM_GAP)}
-                  selected={tab === value}
-                  onClick={() => setTab(value)}
-                />
-              ))}
-              <SpatialButton
-                name="xr-workspace-recenter"
-                position={[0, -0.41, 0]}
-                size={[0.14, 0.16]}
-                onClick={() => useXRWorkspace.getState().recall()}
+    <>
+      <WorkspaceHandShortcut />
+      <group ref={anchor} name="xr-player-ui-anchor">
+        <group ref={workspace} name="xr-workspace-recall-group">
+          <group
+            ref={root}
+            name={XR_WAND_PANEL_INPUT_NAME}
+            visible={visible}
+            pointerEvents={visible ? 'auto' : 'none'}
+            pointerEventsOrder={100}
+            pointerEventsType={(pointerId, pointerType) =>
+              pointerType !== 'grab' &&
+              ((drag.current.pointerId ?? resize.current.pointerId) === null ||
+                (drag.current.pointerId ?? resize.current.pointerId) === pointerId)
+            }
+          >
+            <group scale={WORKSPACE_CONTENT_SCALE * panelScale}>
+              <WorkspaceResizeHandles
+                active={resizeHandle}
+                onStart={startResize}
+                onMove={moveResize}
+                onEnd={finishDrag}
+              />
+              <group name="xr-workspace-content">
+                <PanelFace width={1.4} height={1.04} />
+                {tab === 'paint' && <XRWandPaintPanel adapter={adapter} />}
+                {tab === 'build' && <XRWandBuildPanel adapter={adapter} />}
+                {tab === 'settings' && <XRWandSettingsPanel adapter={adapter} panelPlacement />}
+              </group>
+              <group name="xr-workspace-tool-rail" position={[-0.8, 0, 0]}>
+                <PanelFace width={0.16} height={1.04} />
+                {TABS.map((value, index) => (
+                  <RailButton
+                    key={value}
+                    iconSrc={`/icons/${value}.webp`}
+                    name={`xr-workspace-tab-${value}`}
+                    y={RAIL_TOP - RAIL_ITEM_HEIGHT / 2 - index * (RAIL_ITEM_HEIGHT + RAIL_ITEM_GAP)}
+                    selected={tab === value}
+                    onClick={() => setTab(value)}
+                  />
+                ))}
+                <SpatialButton
+                  name="xr-workspace-hide"
+                  position={[0, -0.2, 0]}
+                  size={[0.14, 0.12]}
+                  onClick={() => useXRWorkspace.getState().hide()}
+                >
+                  <SpatialText color="#ffffff" fontSize={0.024} maxWidth={0.13} position={[0, 0, 0.012]}>
+                    {'Hide\npanel'}
+                  </SpatialText>
+                </SpatialButton>
+                <SpatialButton
+                  name="xr-workspace-recenter"
+                  position={[0, -0.41, 0]}
+                  size={[0.14, 0.16]}
+                  onClick={() => useXRWorkspace.getState().recall()}
+                >
+                  <SpatialText color="#ffffff" fontSize={0.021} maxWidth={0.13} position={[0, 0, 0.012]}>
+                    {'Bring\nworkspace\nhere'}
+                  </SpatialText>
+                </SpatialButton>
+              </group>
+              <mesh
+                name="xr-workspace-drag-handle"
+                layers={overlay}
+                position={[-0.09, DRAG_AREA_Y, 0]}
+                onPointerDown={startDrag}
+                onPointerMove={moveDrag}
+                onPointerUp={finishDrag}
+                onPointerCancel={finishDrag}
+                onClick={(event) => event.stopPropagation()}
               >
-                <SpatialText color="#ffffff" fontSize={0.021} maxWidth={0.13} position={[0, 0, 0.012]}>
-                  {'Bring\nworkspace\nhere'}
-                </SpatialText>
-              </SpatialButton>
-            </group>
-            <mesh
-              ref={handle}
-              name="xr-workspace-drag-handle"
-              layers={overlay}
-              position={[-0.09, DRAG_AREA_Y, 0]}
-              onPointerDown={startDrag}
-              onPointerMove={moveDrag}
-              onPointerUp={finishDrag}
-              onPointerCancel={finishDrag}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <planeGeometry args={[0.52, 0.11]} />
-              <meshBasicMaterial depthWrite={false} opacity={0} transparent />
-              <mesh rotation={[0, 0, Math.PI / 2]} raycast={() => null}>
-                <capsuleGeometry args={[0.022, 0.36, 6, 16]} />
-                <meshBasicMaterial color={XR_WAND_THEME.surface} toneMapped={false} />
+                <planeGeometry args={[0.52, 0.11]} />
+                <meshBasicMaterial depthWrite={false} opacity={0} transparent />
+                <mesh rotation={[0, 0, Math.PI / 2]} raycast={() => null}>
+                  <capsuleGeometry args={[0.022, 0.36, 6, 16]} />
+                  <meshBasicMaterial color={XR_WAND_THEME.surface} toneMapped={false} />
+                </mesh>
               </mesh>
-            </mesh>
+            </group>
           </group>
         </group>
       </group>
-    </group>
+    </>
   )
 }

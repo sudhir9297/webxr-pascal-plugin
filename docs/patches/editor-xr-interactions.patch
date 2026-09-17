@@ -1,0 +1,821 @@
+diff --git a/packages/editor/src/components/editor/grid.tsx b/packages/editor/src/components/editor/grid.tsx
+index 66e11ea0..596cd515 100644
+--- a/packages/editor/src/components/editor/grid.tsx
++++ b/packages/editor/src/components/editor/grid.tsx
+@@ -1,7 +1,7 @@
+ 'use client'
+ 
+ import { type AnyNodeId, emitter, type GridEvent, sceneRegistry } from '@pascal-app/core'
+-import { GRID_LAYER, getSceneTheme, useViewer } from '@pascal-app/viewer'
++import { GRID_LAYER, getSceneTheme, useImmersiveXRPresentation, useViewer } from '@pascal-app/viewer'
+ import { useFrame } from '@react-three/fiber'
+ import { useEffect, useMemo, useRef, useState } from 'react'
+ import { DoubleSide, type Mesh, PlaneGeometry, Quaternion, Vector2, Vector3 } from 'three'
+@@ -10,7 +10,8 @@ import { MeshBasicNodeMaterial } from 'three/webgpu'
+ import { useCeilingEvents } from '../../hooks/use-ceiling-events'
+ import { useGridEvents } from '../../hooks/use-grid-events'
+ import { getPlacementSurface, usesOrientedPlacementPlane } from '../../lib/active-placement-surface'
+-import useEditor, { isGridSnapActive } from '../../store/use-editor'
++import { gridLocalNormal, gridLocalPoint } from '../../lib/grid-frame'
++import useEditor, { getActiveSnapContext, isGridSnapActive } from '../../store/use-editor'
+ import { getMovingNode } from '../../store/use-interaction-scope'
+ 
+ // Reveal radius (m) of the cursor-local grid patch shown while placing/moving in
+@@ -47,6 +48,7 @@ export const Grid = ({
+   fadeStrength?: number
+   revealRadius?: number
+ }) => {
++  const immersive = useImmersiveXRPresentation()
+   const isDark = useViewer((state) => getSceneTheme(state.sceneTheme).appearance === 'dark')
+ 
+   // Use slightly lighter colors for dark themes' grid to make it apparent
+@@ -62,6 +64,9 @@ export const Grid = ({
+   const wallCursorRef = useRef(new Vector3())
+   // Scratch for deriving a moving wall-item's host normal from its mesh.
+   const wallNormalRef = useRef(new Vector3())
++  const localSurfaceRef = useRef(new Vector3())
++  const localNormalRef = useRef(new Vector3())
++  const localCursorRef = useRef(new Vector3())
+   // Last Y pushed to `gridY` state, so the per-frame surface follow only triggers
+   // a React re-render when the height actually changes (not every frame).
+   const lastGridYRef = useRef<number | null>(null)
+@@ -178,10 +183,11 @@ export const Grid = ({
+   // laid-flat orientation maps `positionLocal.y` to world `-Z` relative to the
+   // mesh origin. The cursor is recomputed every frame from the stored world hit
+   // so the reveal stays put regardless of where the mesh origin sits.
+-  const lastWorldCursorRef = useRef<{ x: number; z: number } | null>(null)
++  const lastWorldCursorRef = useRef<Vector3 | null>(null)
+   useEffect(() => {
+     const onGridMove = (event: GridEvent) => {
+-      lastWorldCursorRef.current = { x: event.position[0], z: event.position[2] }
++      lastWorldCursorRef.current ??= new Vector3()
++      lastWorldCursorRef.current.set(...event.position)
+     }
+ 
+     emitter.on('grid:move', onGridMove)
+@@ -196,7 +202,8 @@ export const Grid = ({
+     if (levelId) {
+       const levelMesh = sceneRegistry.nodes.get(levelId)
+       if (levelMesh) {
+-        levelY = levelMesh.position.y
++        levelMesh.getWorldPosition(worldPosRef.current)
++        levelY = gridLocalPoint(gridRef.current.parent, worldPosRef.current, localSurfaceRef.current).y
+       }
+     }
+ 
+@@ -231,6 +238,10 @@ export const Grid = ({
+     }
+ 
+     const gridMesh = gridRef.current
++    if (surfacePoint) {
++      surfacePoint = gridLocalPoint(gridMesh.parent, surfacePoint, localSurfaceRef.current)
++      surfaceNormal = gridLocalNormal(gridMesh.parent, surfaceNormal, localNormalRef.current)
++    }
+     const onOrientedPlane = surfacePoint != null && usesOrientedPlacementPlane(surfaceNormal)
+     if (onOrientedPlane && surfacePoint) {
+       // Surface-anchored lattice: orient the plane into the host and pin the mesh to
+@@ -266,7 +277,8 @@ export const Grid = ({
+       gridMesh.quaternion.copy(HORIZONTAL_QUATERNION)
+       const world = lastWorldCursorRef.current
+       if (world) {
+-        cursorPositionRef.current.set(world.x, -world.z)
++        const local = gridLocalPoint(gridMesh.parent, world, localCursorRef.current)
++        cursorPositionRef.current.set(local.x, -local.z)
+       }
+       if (lastGridYRef.current !== targetY) {
+         lastGridYRef.current = targetY
+@@ -290,7 +302,7 @@ export const Grid = ({
+     // from the interaction scope OR the armed build tool and is true only when
+     // that context resolves to grid, so it IS the gate. (Previously this also
+     // required a ghost in flight, so a merely-armed draft tool showed nothing.)
+-    const snapPatchVisible = isGridSnapActive()
++    const snapPatchVisible = isGridSnapActive() || (immersive && getActiveSnapContext() !== null)
+     revealRadiusUniform.value = PLACEMENT_REVEAL_RADIUS
+     baseAlphaUniform.value = 0
+     cellSizeUniform.value = useEditor.getState().gridSnapStep
+diff --git a/packages/editor/src/components/editor/group-rotate-handle.tsx b/packages/editor/src/components/editor/group-rotate-handle.tsx
+index 74025e8b..5c4d9881 100644
+--- a/packages/editor/src/components/editor/group-rotate-handle.tsx
++++ b/packages/editor/src/components/editor/group-rotate-handle.tsx
+@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
+ import { OrthographicCamera, Plane, type Ray, Vector2, Vector3 } from 'three'
+ import { GROUP_MOVE_DRAG_LABEL, GROUP_ROTATE_DRAG_LABEL } from '../../lib/contextual-help'
+ import { isHistoryShortcut } from '../../lib/history'
++import { intersectSpatialDragPlane } from '../../lib/spatial-drag-plane'
+ import { sfxEmitter } from '../../lib/sfx-bus'
+ import { getSpatialPointerId, spatialPointerInput } from '../../lib/spatial-pointer-input'
+ import useEditor from '../../store/use-editor'
+@@ -227,7 +228,7 @@ function GroupRotateHandleInner({ ids, meshEpoch }: { ids: string[]; meshEpoch:
+       raycaster.setFromCamera(ndc, camera)
+     }
+     const hit = new Vector3()
+-    if (!(spatialRay ?? raycaster.ray).intersectPlane(plane, hit)) return
++    if (!intersectSpatialDragPlane(spatialRay ?? raycaster.ray, plane, hit)) return
+     const initialAngle = angleOf(hit)
+ 
+     document.body.style.cursor = 'grabbing'
+@@ -243,7 +244,7 @@ function GroupRotateHandleInner({ ids, meshEpoch }: { ids: string[]; meshEpoch:
+ 
+     const applyRay = (ray: Ray, freeRotation: boolean) => {
+       const moveHit = new Vector3()
+-      if (!ray.intersectPlane(plane, moveHit)) return
++      if (!intersectSpatialDragPlane(ray, plane, moveHit)) return
+       let delta = angleOf(moveHit) - initialAngle
+       while (delta > Math.PI) delta -= 2 * Math.PI
+       while (delta < -Math.PI) delta += 2 * Math.PI
+@@ -387,15 +388,17 @@ function GroupRotateHandleInner({ ids, meshEpoch }: { ids: string[]; meshEpoch:
+       releaseSpatialCapture = spatialPointerInput.capture(spatialPointerId, {
+         onMove: (ray) => {
+           spatialRay.copy(ray)
+-          applyRay(spatialRay, false)
++          applyRay(spatialRay, true)
+         },
+         onRelease: onUp,
+         onCancel,
+       })
+     }
+-    window.addEventListener('pointermove', onMove)
+-    window.addEventListener('pointerup', onUp)
+-    window.addEventListener('pointercancel', onCancel)
++    if (!spatialPointerId) {
++      window.addEventListener('pointermove', onMove)
++      window.addEventListener('pointerup', onUp)
++      window.addEventListener('pointercancel', onCancel)
++    }
+     window.addEventListener('keydown', onKeyDown, true)
+   }
+ 
+diff --git a/packages/editor/src/components/editor/handles/handle-arrow.tsx b/packages/editor/src/components/editor/handles/handle-arrow.tsx
+index 83e9aa28..ca471a6a 100644
+--- a/packages/editor/src/components/editor/handles/handle-arrow.tsx
++++ b/packages/editor/src/components/editor/handles/handle-arrow.tsx
+@@ -1,7 +1,8 @@
+ 'use client'
+ 
+-import { type Cursor, emitter } from '@pascal-app/core'
+-import { type ThreeEvent, useThree } from '@react-three/fiber'
++import { type Cursor, emitter, sceneRegistry } from '@pascal-app/core'
++import { useViewer } from '@pascal-app/viewer'
++import { type ThreeEvent } from '@react-three/fiber'
+ import { type ReactNode, useEffect, useMemo, useRef } from 'react'
+ import {
+   BoxGeometry,
+@@ -14,8 +15,6 @@ import {
+   type Group,
+   type Intersection,
+   Mesh,
+-  type Object3D,
+-  type Ray,
+   type Raycaster,
+   Shape,
+   TorusGeometry,
+@@ -26,6 +25,7 @@ import { MeshBasicNodeMaterial } from 'three/webgpu'
+ import { EDITOR_LAYER } from '../../../lib/constants'
+ import { EDITOR_HANDLE_HIT_AREA_USER_DATA_KEY } from '../../../lib/direct-manipulation'
+ import { getSpatialPointerId, spatialPointerInput } from '../../../lib/spatial-pointer-input'
++import { createSpatialDragPlane, intersectSpatialDragPlane } from '../../../lib/spatial-drag-plane'
+ import useEditor from '../../../store/use-editor'
+ 
+ // While a press-drag move is in flight (`placementDragMode`), the move tool
+@@ -428,48 +428,53 @@ export function InvisibleHandleHitArea({
+   onPointerLeave: PointerHandler
+   scale: number
+ }) {
+-  const camera = useThree((state) => state.camera)
+-  const canvas = useThree((state) => state.gl.domElement)
+-
+-  const windowPointerEventForRay = (
+-    type: 'pointermove' | 'pointerup' | 'pointercancel',
+-    ray: Ray,
+-  ) => {
+-    const point = ray.at(4, new Vector3()).project(camera)
+-    const rect = canvas.getBoundingClientRect()
+-    return new PointerEvent(type, {
+-      bubbles: true,
+-      button: 0,
+-      buttons: type === 'pointermove' ? 1 : 0,
+-      clientX: rect.left + ((point.x + 1) / 2) * rect.width,
+-      clientY: rect.top + ((1 - point.y) / 2) * rect.height,
+-      pointerType: 'xr',
+-    })
+-  }
+-
+   const handlePointerDown: PointerHandler = (event) => {
+     const spatialPointerId = getSpatialPointerId(event.nativeEvent)
+     if (spatialPointerId) {
+-      const target = event.object as Object3D & {
+-        setPointerCapture?: (pointerId: number) => void
+-      }
+-      target.setPointerCapture?.(event.pointerId)
+-      const initialPointer = windowPointerEventForRay('pointermove', event.ray)
+-      const nativeEvent = event.nativeEvent as PointerEvent
+-      try {
+-        Object.defineProperties(nativeEvent, {
+-          clientX: { configurable: true, value: initialPointer.clientX },
+-          clientY: { configurable: true, value: initialPointer.clientY },
+-          pointerId: { configurable: true, value: event.pointerId },
+-          pointerType: { configurable: true, value: 'xr' },
++      event.object.setPointerCapture?.(event.pointerId)
++      const buildingId = useViewer.getState().selection.buildingId
++      const building = buildingId ? sceneRegistry.nodes.get(buildingId) : undefined
++      building?.updateWorldMatrix(true, false)
++      const inverse = building?.matrixWorld.clone().invert()
++      const initialPoint = event.point.clone()
++      const plane = createSpatialDragPlane(initialPoint, event.ray, building?.matrixWorld)
++      const point = new Vector3()
++      let seeded = false
++      const emitPoint = (position: Vector3, ray = event.ray) => {
++        const local = inverse ? position.clone().applyMatrix4(inverse) : position
++        emitter.emit('grid:move', {
++          position: [position.x, position.y, position.z],
++          localPosition: [local.x, local.y, local.z],
++          nativeEvent: {
++            ...event.nativeEvent,
++            inputSource: spatialPointerId,
++            pointerType: 'xr',
++            pointerId: event.pointerId,
++            target: event.nativeEvent.target,
++            ray: ray.clone(),
++          } as never,
+         })
+-      } catch {
+-        // Direct-ray handle sessions do not need projected DOM coordinates.
+       }
++      // Direct resize sessions replace this capture in onPointerDown below.
++      // Move/reshape tools consume grid events in a plane frozen at the grip.
+       spatialPointerInput.capture(spatialPointerId, {
+-        onMove: (ray) => window.dispatchEvent(windowPointerEventForRay('pointermove', ray)),
+-        onRelease: () => window.dispatchEvent(windowPointerEventForRay('pointerup', event.ray)),
+-        onCancel: () => window.dispatchEvent(windowPointerEventForRay('pointercancel', event.ray)),
++        onMove: (ray) => {
++          if (!seeded) {
++            emitPoint(initialPoint)
++            seeded = true
++          }
++          if (intersectSpatialDragPlane(ray, plane, point)) emitPoint(point, ray)
++        },
++        onRelease: () => {
++          event.object.releasePointerCapture?.(event.pointerId)
++          window.dispatchEvent(new PointerEvent('pointerup', {
++            bubbles: true, button: 0, pointerId: event.pointerId, pointerType: 'xr',
++          }))
++        },
++        onCancel: () => {
++          event.object.releasePointerCapture?.(event.pointerId)
++          emitter.emit('tool:cancel')
++        },
+       })
+     }
+     onPointerDown(event)
+diff --git a/packages/editor/src/components/editor/handles/use-handle-drag.ts b/packages/editor/src/components/editor/handles/use-handle-drag.ts
+index 2ed00165..e2358751 100644
+--- a/packages/editor/src/components/editor/handles/use-handle-drag.ts
++++ b/packages/editor/src/components/editor/handles/use-handle-drag.ts
+@@ -16,6 +16,7 @@ import { type Camera, type Object3D, type Plane, type Ray, Vector2, type Vector3
+ import { isHistoryShortcut } from '../../../lib/history'
+ import { sfxEmitter } from '../../../lib/sfx-bus'
+ import { getSpatialPointerId, spatialPointerInput } from '../../../lib/spatial-pointer-input'
++import { intersectSpatialDragPlane } from '../../../lib/spatial-drag-plane'
+ import { suppressBoxSelectForPointer } from '../../tools/select/box-select-state'
+ import { commitHandleDragPatch } from './handle-drag-history'
+ 
+@@ -162,7 +163,7 @@ export function useHandleDrag(args: UseHandleDragArgs) {
+       return target.copy(raycaster.ray)
+     }
+     const intersectPlane: IntersectPlane = (clientX, clientY, plane, target) => {
+-      if (spatialRay) return spatialRay.intersectPlane(plane, target)
++      if (spatialRay) return intersectSpatialDragPlane(spatialRay, plane, target)
+       setPointerRay(clientX, clientY)
+       return raycaster.ray.intersectPlane(plane, target)
+     }
+@@ -279,6 +280,9 @@ export function useHandleDrag(args: UseHandleDragArgs) {
+               buttons: 1,
+               pointerId: event.pointerId,
+               pointerType: 'xr',
++              // The editor uses Shift for continuous rotation. Controllers
++              // have no keyboard modifier, so spatial drags use that mode.
++              shiftKey: true,
+             }),
+           )
+         },
+@@ -286,9 +290,11 @@ export function useHandleDrag(args: UseHandleDragArgs) {
+         onCancel,
+       })
+     }
+-    window.addEventListener('pointermove', onMove)
+-    window.addEventListener('pointerup', onUp)
+-    window.addEventListener('pointercancel', onCancel)
++    if (!spatialPointerSource) {
++      window.addEventListener('pointermove', onMove)
++      window.addEventListener('pointerup', onUp)
++      window.addEventListener('pointercancel', onCancel)
++    }
+     window.addEventListener('keydown', onKeyDown, true)
+   }
+ }
+diff --git a/packages/editor/src/components/editor/index.tsx b/packages/editor/src/components/editor/index.tsx
+index 96972637..10bc42c1 100644
+--- a/packages/editor/src/components/editor/index.tsx
++++ b/packages/editor/src/components/editor/index.tsx
+@@ -801,7 +801,7 @@ const ViewerSceneContent = memo(function ViewerSceneContent({
+       {!noEditing && <SelectionAffordanceManager />}
+       <RoofEditSystem />
+       <StairEditSystem />
+-      {!(isLoading || isFirstPersonMode || isXRMode) && <SnapAwareGrid />}
++      {!(isLoading || isFirstPersonMode) && <SnapAwareGrid />}
+       {!(isLoading || noEditing) && <ToolManager />}
+       {isFirstPersonMode && <FirstPersonControls />}
+       {!isXRMode && <CustomCameraControls />}
+diff --git a/packages/editor/src/components/editor/wall-move-side-handles.tsx b/packages/editor/src/components/editor/wall-move-side-handles.tsx
+index 0676f3ef..a9df711e 100644
+--- a/packages/editor/src/components/editor/wall-move-side-handles.tsx
++++ b/packages/editor/src/components/editor/wall-move-side-handles.tsx
+@@ -1,5 +1,7 @@
+ 'use client'
+ 
++import { intersectSpatialDragPlane, spatialDragLocalY } from '../../lib/spatial-drag-plane'
++
+ import {
+   type AnyNode,
+   type AnyNodeId,
+@@ -914,6 +916,8 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+     // Vertical plane through the wall midpoint whose normal points toward
+     // the camera (projected to horizontal). Raycasting against it converts
+     // pointer movement into a world-space Y value.
++    levelObject.updateWorldMatrix(true, false)
++    const worldToLocal = levelObject.matrixWorld.clone().invert()
+     const midpointWorld = new Vector3(midX, 0, midZ).applyMatrix4(levelObject.matrixWorld)
+     const planeNormal = new Vector3()
+       .subVectors(camera.getWorldPosition(new Vector3()), midpointWorld)
+@@ -926,6 +930,12 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+     const spatialPointerId = getSpatialPointerId(event.nativeEvent)
+     const spatialPointerSource = typeof spatialPointerId === 'object' ? spatialPointerId : null
+     const spatialRay = spatialPointerSource ? event.ray.clone() : null
++    if (spatialRay) {
++      const up = new Vector3(0, 1, 0).transformDirection(levelObject.matrixWorld)
++      planeNormal.copy(spatialRay.direction).addScaledVector(up, -spatialRay.direction.dot(up))
++      if (planeNormal.lengthSq() < 0.0025) return
++      plane.setFromNormalAndCoplanarPoint(planeNormal.normalize(), midpointWorld)
++    }
+     const setNDC = (clientX: number, clientY: number) => {
+       const rect = gl.domElement.getBoundingClientRect()
+       ndc.set(
+@@ -939,12 +949,12 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+       raycaster.setFromCamera(ndc, camera)
+     }
+     const hit = new Vector3()
+-    if (!(spatialRay ?? raycaster.ray).intersectPlane(plane, hit)) return
++    if (!intersectSpatialDragPlane(spatialRay ?? raycaster.ray, plane, hit)) return
+ 
+     // Dragging the top makes the wall custom-height; seed from the resolved
+     // effective height so a plane-bound wall's drag starts at its real top.
+     const initialHeight = getWallEffectiveHeightForNodes(wall, useScene.getState().nodes)
+-    const initialY = hit.y
++    const initialY = spatialDragLocalY(hit, worldToLocal)
+     const wallId = wall.id as AnyNodeId
+     let pendingHeight = initialHeight
+     let releaseSpatialCapture: (() => void) | null = null
+@@ -969,8 +979,9 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+     }
+     const applyRay = (ray: Ray) => {
+       const intersection = new Vector3()
+-      if (!ray.intersectPlane(plane, intersection)) return
+-      const newHeight = Math.max(MIN_WALL_HEIGHT, initialHeight + (intersection.y - initialY))
++      if (!intersectSpatialDragPlane(ray, plane, intersection)) return
++      const newHeight = Math.max(MIN_WALL_HEIGHT, initialHeight + (spatialDragLocalY(intersection, worldToLocal) - initialY))
++      if (Math.abs(newHeight - pendingHeight) < 1e-6) return
+       pendingHeight = newHeight
+       useLiveNodeOverrides.getState().set(wallId, { height: newHeight })
+       useScene.getState().markDirty(wallId)
+@@ -997,6 +1008,7 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+       // Commit: write the final override-merged value to zustand once
+       // (tracked, undoable), then drop the override so the renderer
+       // falls back to the scene store.
++      useScene.temporal.getState().resume()
+       if (pendingHeight !== initialHeight) {
+         useScene.getState().updateNode(wallId, { height: pendingHeight })
+       }
+@@ -1022,7 +1034,7 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+       onCancel()
+     }
+ 
+-    dragCleanupRef.current = cleanup
++    dragCleanupRef.current = onCancel
+     if (spatialPointerSource && spatialRay) {
+       releaseSpatialCapture = spatialPointerInput.capture(spatialPointerSource, {
+         onMove: (ray) => {
+@@ -1033,9 +1045,11 @@ function WallHeightArrowHandle({ wall }: { wall: WallNode }) {
+         onCancel,
+       })
+     }
+-    window.addEventListener('pointermove', onMove)
+-    window.addEventListener('pointerup', onUp)
+-    window.addEventListener('pointercancel', onCancel)
++    if (!spatialPointerSource) {
++      window.addEventListener('pointermove', onMove)
++      window.addEventListener('pointerup', onUp)
++      window.addEventListener('pointercancel', onCancel)
++    }
+     window.addEventListener('keydown', onKeyDown, true)
+   }
+ 
+diff --git a/packages/editor/src/components/tools/shared/affordance-dispatch.ts b/packages/editor/src/components/tools/shared/affordance-dispatch.ts
+index 0fc35c6a..cf175c37 100644
+--- a/packages/editor/src/components/tools/shared/affordance-dispatch.ts
++++ b/packages/editor/src/components/tools/shared/affordance-dispatch.ts
+@@ -15,6 +15,17 @@ import { type ComponentType, lazy } from 'react'
+  */
+ const lazyToolCache = new WeakMap<() => Promise<unknown>, ComponentType>()
+ 
++export async function preloadRegistryAffordanceTools(kind: string): Promise<void> {
++  const tools = nodeRegistry.get(kind)?.affordanceTools
++  await Promise.allSettled(Object.values(tools ?? {}).map(async (loader) => {
++    if (!loader || lazyToolCache.has(loader)) return
++    const module = await loader() as { default: ComponentType<any> }
++    // Keep an already-mounted lazy component stable. Otherwise use the resolved
++    // component directly so grabbing a preloaded handle never suspends its tool.
++    if (!lazyToolCache.has(loader)) lazyToolCache.set(loader, module.default)
++  }))
++}
++
+ export function getRegistryAffordanceTool(
+   kind: string,
+   affordance: string,
+diff --git a/packages/editor/src/components/tools/shared/pointer-support-cap.test.ts b/packages/editor/src/components/tools/shared/pointer-support-cap.test.ts
+index 0ed0b57a..72a455ec 100644
+--- a/packages/editor/src/components/tools/shared/pointer-support-cap.test.ts
++++ b/packages/editor/src/components/tools/shared/pointer-support-cap.test.ts
+@@ -18,6 +18,7 @@ import {
+   MeshBasicMaterial,
+   OrthographicCamera,
+   PerspectiveCamera,
++  Ray,
+   Vector3,
+ } from 'three'
+ import { z } from 'zod'
+@@ -160,6 +161,27 @@ describe('resolvePointerSupportSurface node tops', () => {
+     expect(support?.worldPoint).toEqual([0, 2, 0])
+   })
+ 
++  test('XR floor drawing uses the controller ray even when the camera sees a raised surface', () => {
++    addPluginPlatform(2, [4, 2, 2])
++    const camera = new PerspectiveCamera()
++    camera.position.set(0, 5, 5)
++    camera.updateMatrixWorld(true)
++    const controllerRay = new Ray(new Vector3(0, 1.5, 0), new Vector3(0, -1, 0))
++    const desktop = resolvePointerSupportSurface(camera, [0, 0, 0], { includeNodeTopSurfaces: true })
++    expect(desktop?.sourceNodeId).toBe(PLATFORM_ID)
++    const xr = resolvePointerSupportSurface(camera, [0, 0, 0], {
++      includeNodeTopSurfaces: true,
++      pointerRay: controllerRay,
++    })
++    expect(xr?.sourceNodeId).toBeNull()
++    expect(xr?.worldPoint).toEqual([0, 0, 0])
++    camera.position.set(12, 8, -10)
++    camera.updateMatrixWorld(true)
++    expect(resolvePointerSupportSurface(camera, [0, 0, 0], {
++      includeNodeTopSurfaces: true, pointerRay: controllerRay,
++    })?.worldPoint).toEqual([0, 0, 0])
++  })
++
+   test('keeps the ground result unless node-top surfaces are asked for', () => {
+     addPluginPlatform()
+ 
+diff --git a/packages/editor/src/components/tools/shared/pointer-support-cap.ts b/packages/editor/src/components/tools/shared/pointer-support-cap.ts
+index f51a62df..c8eb17a8 100644
+--- a/packages/editor/src/components/tools/shared/pointer-support-cap.ts
++++ b/packages/editor/src/components/tools/shared/pointer-support-cap.ts
+@@ -10,7 +10,7 @@ import {
+   useScene,
+ } from '@pascal-app/core'
+ import { useViewer } from '@pascal-app/viewer'
+-import { type Camera, Matrix3, type Object3D, Raycaster, Vector3 } from 'three'
++import { type Camera, Matrix3, type Object3D, type Ray, Raycaster, Vector3 } from 'three'
+ import { resolveTerrainGroundHit } from '../../../lib/ground-surface'
+ import { scopeNodeId } from '../../../lib/interaction/scope'
+ import useInteractionScope from '../../../store/use-interaction-scope'
+@@ -78,16 +78,19 @@ export type PointerSupportSurface = {
+ export function resolvePointerSupportSurface(
+   camera: Camera,
+   worldHit: readonly [number, number, number],
+-  options?: { includeNodeTopSurfaces?: boolean },
++  options?: { includeNodeTopSurfaces?: boolean; pointerRay?: Ray },
+ ): PointerSupportSurface | null {
+   const levelId = useViewer.getState().selection.levelId
+   if (!levelId) return null
+ 
+   // The world ray, kept before the level conversion below: the terrain field is
+   // world-space (site geometry, not level-local), so the march needs this frame.
+-  camera.getWorldPosition(worldRayOrigin)
++  if (options?.pointerRay) worldRayOrigin.copy(options.pointerRay.origin)
++  else camera.getWorldPosition(worldRayOrigin)
+   const cameraToHit = hitScratch.set(worldHit[0], worldHit[1], worldHit[2]).sub(worldRayOrigin)
+-  if ((camera as Camera & { isOrthographicCamera?: boolean }).isOrthographicCamera) {
++  if (options?.pointerRay) {
++    worldRayDirection.copy(options.pointerRay.direction).normalize()
++  } else if ((camera as Camera & { isOrthographicCamera?: boolean }).isOrthographicCamera) {
+     // For an orthographic camera every screen pixel has the same direction. The
+     // hit point is offset from the camera along the view plane, so using
+     // `camera.position -> hit` tilts the ray toward the screen centre and makes
+@@ -101,7 +104,7 @@ export function resolvePointerSupportSurface(
+   }
+ 
+   originScratch.copy(worldRayOrigin)
+-  hitScratch.set(worldHit[0], worldHit[1], worldHit[2])
++  hitScratch.copy(worldRayOrigin).add(worldRayDirection)
+   // Slab polygons/elevations live in the level frame; the level mesh
+   // carries the storey Y offset and any building rotation.
+   const levelMesh = sceneRegistry.nodes.get(levelId as AnyNodeId)
+diff --git a/packages/editor/src/components/tools/tool-manager.tsx b/packages/editor/src/components/tools/tool-manager.tsx
+index dcc3ba13..5ee15720 100644
+--- a/packages/editor/src/components/tools/tool-manager.tsx
++++ b/packages/editor/src/components/tools/tool-manager.tsx
+@@ -32,7 +32,7 @@ import { WallSnapBeaconLayer } from '../editor/wall-snap-beacon-layer'
+ import { ElevatorTool } from './elevator/elevator-tool'
+ import { MoveTool } from './item/move-tool'
+ import { RegistryToolProvider } from './registry-tool-context'
+-import { getRegistryAffordanceTool } from './shared/affordance-dispatch'
++import { getRegistryAffordanceTool, preloadRegistryAffordanceTools } from './shared/affordance-dispatch'
+ import { FacingPoseIndicator } from './shared/facing-pose-indicator'
+ import { SiteBoundaryEditor } from './site/site-boundary-editor'
+ import { TerrainSculptTool } from './site/terrain-sculpt-tool'
+@@ -59,8 +59,7 @@ export function preloadRegistryToolModules(tool: string | null): Promise<void> {
+   if (def.system) loaders.push(def.system.module)
+   if (def.parametrics?.customPanel) loaders.push(def.parametrics.customPanel)
+   if (def.parametrics?.trailingSection) loaders.push(def.parametrics.trailingSection)
+-  const moveTool = def.affordanceTools?.move
+-  if (moveTool) loaders.push(moveTool)
++  loaders.push(() => preloadRegistryAffordanceTools(tool))
+ 
+   const preload = Promise.allSettled(loaders.map((loader) => loader())).then(() => undefined)
+   registryToolPreloadCache.set(def, preload)
+diff --git a/packages/editor/src/hooks/use-ceiling-events.ts b/packages/editor/src/hooks/use-ceiling-events.ts
+index 730db810..3c0e3291 100644
+--- a/packages/editor/src/hooks/use-ceiling-events.ts
++++ b/packages/editor/src/hooks/use-ceiling-events.ts
+@@ -55,6 +55,8 @@ export function useCeilingEvents() {
+   const hoveredRef = useRef<string | null>(null)
+ 
+   useEffect(() => {
++    // XR placement is driven by the controller-ray bridge, never screen coordinates.
++    if (gl.xr.isPresenting) return
+     const canvas = gl.domElement
+ 
+     const isActive = (): boolean => {
+diff --git a/packages/editor/src/hooks/use-grid-events.ts b/packages/editor/src/hooks/use-grid-events.ts
+index a93533d0..0873d8bf 100644
+--- a/packages/editor/src/hooks/use-grid-events.ts
++++ b/packages/editor/src/hooks/use-grid-events.ts
+@@ -29,6 +29,8 @@ export function useGridEvents(gridY: number) {
+   }, [gridY])
+ 
+   useEffect(() => {
++    // XR placement is driven by the controller-ray bridge, never screen coordinates.
++    if (gl.xr.isPresenting) return
+     const canvas = gl.domElement
+ 
+     const getIntersection = (nativeEvent: MouseEvent | PointerEvent): Vector3 | null => {
+diff --git a/packages/nodes/src/wall/move-tool.tsx b/packages/nodes/src/wall/move-tool.tsx
+index 293b40c4..e4a4822d 100644
+--- a/packages/nodes/src/wall/move-tool.tsx
++++ b/packages/nodes/src/wall/move-tool.tsx
+@@ -214,6 +214,7 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+     const levelId = node.parentId ?? null
+     pauseSceneHistory(useScene)
+     let shouldRestoreOnCleanup = true
++    let active = true
+ 
+     // Wall ids that currently carry a live position override. Cleared on commit
+     // (after the final store write lands) and on cancel / external unmount.
+@@ -421,6 +422,12 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+     }
+ 
+     const applyPreview = (nextStart: [number, number], nextEnd: [number, number]) => {
++      const previous = previewRef.current ?? { start: originalStart, end: originalEnd }
++      if (
++        nextStart[0] === previous.start[0] && nextStart[1] === previous.start[1] &&
++        nextEnd[0] === previous.end[0] && nextEnd[1] === previous.end[1]
++      ) return
++      hasDraggedRef.current = true
+       previewRef.current = { start: nextStart, end: nextEnd }
+       const centerX = (nextStart[0] + nextEnd[0]) / 2
+       const centerZ = (nextStart[1] + nextEnd[1]) / 2
+@@ -466,6 +473,7 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+     }
+ 
+     const onGridMove = (event: GridEvent) => {
++      if (!active) return
+       const rawX = event.localPosition[0]
+       const rawZ = event.localPosition[2]
+       const snapStep = getSegmentGridStep()
+@@ -473,10 +481,15 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+       // Anchor at the raw cursor so the displacement is measured in
+       // continuous space.
+       const anchor = dragAnchorRef.current ?? [rawX, rawZ]
++      const firstMove = dragAnchorRef.current === null
+       dragAnchorRef.current = anchor
++      // Seeding a controller grab is not movement; don't snap an off-grid wall
++      // to the lattice before the user has moved their hand.
++      if (firstMove) return
+ 
+       const rawDeltaX = rawX - anchor[0]
+       const rawDeltaZ = rawZ - anchor[1]
++      if (!hasDraggedRef.current && Math.hypot(rawDeltaX, rawDeltaZ) < 1e-6) return
+ 
+       // When the move is axis-locked (side-handle drag), snap the wall
+       // center's absolute perpendicular offset to a multiple of
+@@ -527,7 +540,6 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+ 
+       const nextCenter: [number, number] = [originalCenter[0] + deltaX, originalCenter[1] + deltaZ]
+       const nextWall = buildWallFromCenter(nextCenter)
+-      hasDraggedRef.current = true
+       applyPreview(nextWall.start, nextWall.end)
+     }
+ 
+@@ -628,6 +640,8 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+     }
+ 
+     const onPointerUp = () => {
++      if (!active) return
++      active = false
+       // Press-release without drag: dismiss the tool without committing.
+       // This is the same UX as MoveWallEndpointTool / WallHeightArrowHandle
+       // — pointer-down on the affordance starts the move, drag updates the
+@@ -669,6 +683,8 @@ export const MoveWallTool: React.FC<{ node: WallNode }> = ({ node }) => {
+     }
+ 
+     const onCancel = () => {
++      if (!active) return
++      active = false
+       shouldRestoreOnCleanup = false
+       restoreOriginal()
+       useViewer.getState().setSelection({ selectedIds: [nodeId] })
+diff --git a/packages/nodes/src/wall/tool.tsx b/packages/nodes/src/wall/tool.tsx
+index 745c2a17..e0ec0ad7 100644
+--- a/packages/nodes/src/wall/tool.tsx
++++ b/packages/nodes/src/wall/tool.tsx
+@@ -547,6 +547,7 @@ export const WallTool: React.FC = () => {
+       event.nativeEvent?.target instanceof HTMLCanvasElement
+         ? resolvePointerSupportSurface(cameraRef.current, event.position, {
+             includeNodeTopSurfaces: true,
++            pointerRay: event.nativeEvent.ray,
+           })
+         : null
+ 
+diff --git a/packages/editor/src/components/tools/shared/affordance-dispatch.test.ts b/packages/editor/src/components/tools/shared/affordance-dispatch.test.ts
+new file mode 100644
+index 00000000..53e0fb68
+--- /dev/null
++++ b/packages/editor/src/components/tools/shared/affordance-dispatch.test.ts
+@@ -0,0 +1,24 @@
++import { afterAll, afterEach, expect, spyOn, test } from 'bun:test'
++import { type AnyNodeDefinition, nodeRegistry } from '@pascal-app/core'
++import { getRegistryAffordanceTool, preloadRegistryAffordanceTools } from './affordance-dispatch'
++
++const get = spyOn(nodeRegistry, 'get')
++afterEach(() => get.mockReset())
++afterAll(() => get.mockRestore())
++
++test('a preloaded drag tool mounts directly without first-gesture suspense', async () => {
++  const Tool = () => null
++  const loader = async () => ({ default: Tool })
++  get.mockReturnValue({ affordanceTools: { move: loader } } as unknown as AnyNodeDefinition)
++  await preloadRegistryAffordanceTools('wall')
++  expect(getRegistryAffordanceTool('wall', 'move')).toBe(Tool)
++  expect(getRegistryAffordanceTool('wall', 'move')).toBe(Tool)
++})
++
++test('preloading does not change an already mounted lazy component identity', async () => {
++  const loader = async () => ({ default: () => null })
++  get.mockReturnValue({ affordanceTools: { move: loader } } as unknown as AnyNodeDefinition)
++  const mounted = getRegistryAffordanceTool('wall', 'move')
++  await preloadRegistryAffordanceTools('wall')
++  expect(getRegistryAffordanceTool('wall', 'move')).toBe(mounted)
++})
+diff --git a/packages/editor/src/lib/grid-frame.test.ts b/packages/editor/src/lib/grid-frame.test.ts
+new file mode 100644
+index 00000000..34cc9114
+--- /dev/null
++++ b/packages/editor/src/lib/grid-frame.test.ts
+@@ -0,0 +1,17 @@
++import { expect, test } from 'bun:test'
++import { Group, Vector3 } from 'three'
++import { gridLocalNormal, gridLocalPoint } from './grid-frame'
++
++test('grid floor and cursor stay in model coordinates after God-view pan, scale and yaw', () => {
++  const root = new Group()
++  root.position.set(2, 4, -3)
++  root.rotation.y = Math.PI / 3
++  root.scale.setScalar(0.2)
++  root.updateMatrixWorld(true)
++  const local = new Vector3(3, 2.5, 7)
++  const world = root.localToWorld(local.clone())
++  expect(gridLocalPoint(root, world, new Vector3()).distanceTo(local)).toBeLessThan(1e-8)
++  const normal = new Vector3(1, 0, 0).transformDirection(root.matrixWorld)
++  expect(gridLocalNormal(root, normal, new Vector3()).distanceTo(new Vector3(1, 0, 0))).toBeLessThan(1e-8)
++  expect(world.distanceTo(local)).toBeGreaterThan(1)
++})
+diff --git a/packages/editor/src/lib/grid-frame.ts b/packages/editor/src/lib/grid-frame.ts
+new file mode 100644
+index 00000000..09b428cd
+--- /dev/null
++++ b/packages/editor/src/lib/grid-frame.ts
+@@ -0,0 +1,18 @@
++import { type Object3D, Vector3 } from 'three'
++
++// Placement surfaces are world-space; the grid lives under the scalable XR
++// scene root. Keep its lattice and reveal in that root's model coordinates.
++export function gridLocalPoint(parent: Object3D | null, world: Vector3, target: Vector3) {
++  target.copy(world)
++  if (parent) {
++    parent.updateWorldMatrix(true, false)
++    parent.worldToLocal(target)
++  }
++  return target
++}
++
++export function gridLocalNormal(parent: Object3D | null, normal: Vector3, target: Vector3) {
++  target.copy(normal)
++  if (parent) target.transformDirection(parent.matrixWorld.clone().invert())
++  return target
++}
+diff --git a/packages/editor/src/lib/spatial-drag-plane.test.ts b/packages/editor/src/lib/spatial-drag-plane.test.ts
+new file mode 100644
+index 00000000..d8cb2dd3
+--- /dev/null
++++ b/packages/editor/src/lib/spatial-drag-plane.test.ts
+@@ -0,0 +1,49 @@
++import { expect, test } from 'bun:test'
++import { Matrix4, Ray, Vector3 } from 'three'
++import { createSpatialDragPlane, intersectSpatialDragPlane, spatialDragLocalY } from './spatial-drag-plane'
++
++test('controller translation gives continuous motion at the grabbed height', () => {
++  const start = new Vector3(2, 2.4, 1)
++  const ray = new Ray(new Vector3(2, 3.4, 2), new Vector3(0, -1, -1).normalize())
++  const plane = createSpatialDragPlane(start, ray)
++  for (let step = 0; step <= 10; step++) {
++    const moved = ray.clone()
++    moved.origin.z += step / 10
++    const hit = intersectSpatialDragPlane(moved, plane, new Vector3())!
++    expect(hit.x).toBeCloseTo(2)
++    expect(hit.y).toBeCloseTo(2.4)
++    expect(hit.z).toBeCloseTo(1 + step / 10)
++  }
++})
++
++test('horizontal rays use a stable facing plane and grazing rays are ignored', () => {
++  const ray = new Ray(new Vector3(0, 1, 2), new Vector3(0, 0, -1))
++  const plane = createSpatialDragPlane(new Vector3(0, 1, 0), ray)
++  ray.origin.x = 0.1
++  expect(intersectSpatialDragPlane(ray, plane, new Vector3())?.x).toBeCloseTo(0.1)
++  ray.direction.set(1, 0, -0.001).normalize()
++  expect(intersectSpatialDragPlane(ray, plane, new Vector3())).toBeNull()
++})
++
++test('drag plane follows a rotated, scaled building frame', () => {
++  const transform = new Matrix4().makeRotationZ(Math.PI / 4).scale(new Vector3(0.2, 0.2, 0.2))
++  const point = new Vector3(0, 2, 0).applyMatrix4(transform)
++  const up = new Vector3(0, 1, 0).transformDirection(transform)
++  const ray = new Ray(point.clone().add(up), up.clone().negate())
++  const plane = createSpatialDragPlane(point, ray, transform)
++  expect(intersectSpatialDragPlane(ray, plane, new Vector3())?.distanceTo(point)).toBeLessThan(1e-8)
++})
++
++ test('height drag uses model metres at human and miniature scales without an initial jump', () => {
++  for (const scale of [1, 0.2, 2]) {
++    const frame = new Matrix4().makeRotationY(0.7).scale(new Vector3(scale, scale, scale))
++    frame.setPosition(2, 4, -3)
++    const inverse = frame.clone().invert()
++    const start = new Vector3(1, 2.5, 3).applyMatrix4(frame)
++    const initialY = spatialDragLocalY(start, inverse)
++    for (let step = 0; step <= 10; step++) {
++      const moved = start.clone().add(new Vector3(0, scale * step / 10, 0))
++      expect(2.5 + spatialDragLocalY(moved, inverse) - initialY).toBeCloseTo(2.5 + step / 10)
++    }
++  }
++})
+diff --git a/packages/editor/src/lib/spatial-drag-plane.ts b/packages/editor/src/lib/spatial-drag-plane.ts
+new file mode 100644
+index 00000000..c2daed24
+--- /dev/null
++++ b/packages/editor/src/lib/spatial-drag-plane.ts
+@@ -0,0 +1,19 @@
++import { type Matrix4, Plane, type Ray, Vector3 } from 'three'
++
++export function createSpatialDragPlane(point: Vector3, ray: Ray, localToWorld?: Matrix4) {
++  const normal = new Vector3(0, 1, 0)
++  if (localToWorld) normal.transformDirection(localToWorld)
++  // A nearly horizontal controller ray cannot reliably intersect a floor plane.
++  if (Math.abs(normal.dot(ray.direction)) < 0.2) normal.copy(ray.direction)
++  return new Plane().setFromNormalAndCoplanarPoint(normal, point)
++}
++
++export function intersectSpatialDragPlane(ray: Ray, plane: Plane, target: Vector3) {
++  if (Math.abs(plane.normal.dot(ray.direction)) < 0.05) return null
++  return ray.intersectPlane(plane, target)
++}
++
++// Freeze this frame at grab time; world metres differ from model metres in God view.
++export function spatialDragLocalY(worldPoint: Vector3, worldToLocal: Matrix4) {
++  return worldPoint.clone().applyMatrix4(worldToLocal).y
++}

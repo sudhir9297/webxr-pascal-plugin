@@ -8,6 +8,7 @@ import {
   type NodeEvent,
   sceneRegistry,
   useScene,
+  useLiveNodeOverrides,
 } from '@pascal-app/core'
 import { getHistoryCommandState, useEditor, useInteractionScope } from '@pascal-app/editor'
 import { useViewer } from '@pascal-app/viewer'
@@ -20,6 +21,7 @@ import { useXRWorkspace } from '../../../xr/wand/workspace-store'
 import { useXRPlayerMode } from '../../../xr/mode-switching/store/player-mode'
 import { useXRWandPanelSettings } from '../../../xr/wand'
 import { resolveEmulatedInputPose } from './emulator-ray'
+import { mountEmulatorTestControls } from './emulator-test-controls'
 
 type InputKind = 'controller' | 'hand'
 
@@ -27,6 +29,8 @@ const XR_INPUT_EVENT_TIMEOUT_MS = 150
 const XR_FRAME_TIMEOUT_MS = 100
 
 export type XREmulatorTestHarness = {
+  readGrid: () => Record<string, unknown>
+  setTestSceneTransform: (scale: number, position: [number, number, number], yaw: number) => Promise<boolean>
   clickNodeOnce: (nodeId: string) => Promise<Record<string, unknown>>
   snapTurn: () => Promise<boolean>
   moveViewer: (delta: [number, number, number], yaw?: number) => Promise<boolean>
@@ -35,6 +39,11 @@ export type XREmulatorTestHarness = {
   aimAtNode: (nodeId: string, inputKind?: InputKind, distance?: number) => Promise<boolean>
   click: (name: string, inputKind?: InputKind) => Promise<boolean>
   clickLevelPoint: (point: [number, number], inputKind?: InputKind) => Promise<boolean>
+  clickFloorFromViewer: (point: [number, number], inputKind?: InputKind) => Promise<boolean>
+  clickPanelOnce: (name: string, inputKind?: InputKind) => Promise<Record<string, unknown>>
+  pressPanelReleaseOnNode: (name: string, nodeId: string, inputKind?: InputKind) => Promise<Record<string, unknown>>
+  readDragTrace: () => unknown[]
+  setSnappingMode: (context: 'wall' | 'item' | 'polygon', mode: 'off' | 'grid' | 'lines' | 'angles') => void
   clickNode: (nodeId: string, inputKind?: InputKind) => Promise<boolean>
   clickNodeSurface: (nodeId: string, inputKind?: InputKind) => Promise<boolean>
   drag: (names: string[], inputKind?: InputKind) => Promise<boolean>
@@ -412,6 +421,7 @@ export function XREmulatorTestHarnessBridge() {
     const clickLevelPoint = async (
       point: [number, number],
       inputKind: InputKind = 'controller',
+      fromViewer = false,
     ) => {
       if (!(await prepareInput(inputKind))) return false
       const levelId = useViewer.getState().selection.levelId
@@ -443,7 +453,15 @@ export function XREmulatorTestHarnessBridge() {
       else if (buildingObject) normal.transformDirection(buildingObject.matrixWorld)
       target.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), normal)
       target.updateMatrixWorld(true)
-      if (!(await setInputPose(target, inputKind, 1.25))) return false
+      let distance = 1.25
+      if (fromViewer) {
+        const controllerPosition = camera.getWorldPosition(new Vector3()).add(new Vector3(0.2, -0.35, -0.15))
+        const direction = controllerPosition.sub(target.position)
+        distance = direction.length()
+        target.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), direction.normalize())
+        target.updateMatrixWorld(true)
+      }
+      if (!(await setInputPose(target, inputKind, distance))) return false
       await waitForXRFrames(2)
       globalThis.__pascalXRLastGridEvent = undefined
       await setSelectValueAndWait(1, inputKind, 'selectstart')
@@ -708,7 +726,66 @@ export function XREmulatorTestHarnessBridge() {
       }
     }
 
+    let dragTrace: unknown[] = []
     const harness: XREmulatorTestHarness = {
+      readGrid: () => {
+        const grid = scene.getObjectByName('pascal-editor-grid-input')
+        return {
+          visible: grid?.visible,
+          localPosition: grid?.position.toArray(),
+          worldPosition: grid?.getWorldPosition(new Vector3()).toArray(),
+          gridMask: grid?.layers.mask,
+          cameraMask: camera.layers.mask,
+          eyeMasks: (camera as typeof camera & { cameras?: typeof camera[] }).cameras?.map(eye => eye.layers.mask),
+        }
+      },
+      setTestSceneTransform: async (scale, position, yaw) => {
+        const root = scene.getObjectByName('xr-player-scene-root')
+        if (!root || !Number.isFinite(scale) || scale <= 0) return false
+        root.scale.setScalar(scale)
+        root.position.set(...position)
+        root.rotation.y = yaw
+        root.updateWorldMatrix(true, true)
+        await waitForXRFrames(3)
+        return true
+      },
+      readDragTrace: () => dragTrace,
+      setSnappingMode: (context, mode) => useEditor.getState().setSnappingMode(context, mode),
+      pressPanelReleaseOnNode: async (name, nodeId, inputKind = 'controller') => {
+        const events: string[] = []
+        const record = (event: NodeEvent) => events.push(`node:click:${event.node.id}`)
+        emitter.on('node:click', record)
+        try {
+          const aimed = await aimAt(name, inputKind)
+          if (!aimed) return { aimed }
+          await setSelectValueAndWait(1, inputKind, 'selectstart')
+          await aimAtNode(nodeId, inputKind)
+          await setSelectValueAndWait(0, inputKind, 'selectend')
+          await waitForXRFrames(3)
+          return { aimed, events }
+        } finally {
+          emitter.off('node:click', record)
+        }
+      },
+      clickFloorFromViewer: (point, inputKind) => clickLevelPoint(point, inputKind, true),
+      clickPanelOnce: async (name, inputKind = 'controller') => {
+        const events: string[] = []
+        const grid = () => events.push('grid:click')
+        const node = (event: NodeEvent) => events.push(`node:click:${event.node.id}`)
+        emitter.on('grid:click', grid)
+        emitter.on('node:click', node)
+        try {
+          const aimed = await aimAt(name, inputKind)
+          if (!aimed) return { aimed }
+          const started = await setSelectValueAndWait(1, inputKind, 'selectstart')
+          const ended = await setSelectValueAndWait(0, inputKind, 'selectend')
+          await waitForXRFrames(3)
+          return { aimed, started, ended, events }
+        } finally {
+          emitter.off('grid:click', grid)
+          emitter.off('node:click', node)
+        }
+      },
       clickNodeOnce: async (nodeId) => {
         const events: unknown[] = []
         const selected = (node: AnyNode) => events.push({ intent: node.id, selected: useViewer.getState().selection.selectedIds })
@@ -811,9 +888,25 @@ export function XREmulatorTestHarnessBridge() {
         if (!handle || !(await prepareInput(inputKind))) return false
         const target = new Object3D()
         handle.getWorldPosition(target.position)
+        // Curved-arrow hit areas are torus arcs; their origin is in the empty
+        // centre, so aim at the middle of the arc rather than the pivot.
+        const geometry = (handle as Object3D & { geometry?: { type: string; parameters?: { radius?: number } } }).geometry
+        if (geometry?.type === 'TorusGeometry' && geometry.parameters?.radius) {
+          target.position.copy(handle.localToWorld(new Vector3(geometry.parameters.radius, 0, 0)))
+        }
         target.lookAt(target.position.clone().add(new Vector3(0, 0.5, 0.5)))
         target.updateMatrixWorld(true)
         const before = JSON.stringify(useScene.getState().nodes)
+        const selectedId = useViewer.getState().selection.selectedIds[0]
+        dragTrace = []
+        const sample = () => {
+          if (!selectedId) return
+          dragTrace.push(JSON.parse(JSON.stringify({
+            node: useScene.getState().nodes[selectedId as AnyNodeId],
+            override: useLiveNodeOverrides.getState().get(selectedId),
+            scope: useInteractionScope.getState().scope.kind,
+          })))
+        }
         await setInputPose(target, inputKind, 0.5)
         await waitForXRFrames(2)
         try {
@@ -823,11 +916,13 @@ export function XREmulatorTestHarnessBridge() {
             target.updateMatrixWorld(true)
             await setInputPose(target, inputKind, 0.5)
             await waitForXRFrames(2)
+            sample()
           }
         } finally {
           await setSelectValueAndWait(0, inputKind, 'selectend')
         }
         await waitForXRFrames(2)
+        sample()
         return JSON.stringify(useScene.getState().nodes) !== before
       },
       aimAt,
@@ -991,7 +1086,9 @@ export function XREmulatorTestHarnessBridge() {
       version: 1,
     }
     globalThis.__pascalXRTestHarness = harness
+    const removeControls = getEmulatedXRDevice() ? mountEmulatorTestControls(harness) : () => undefined
     return () => {
+      removeControls()
       emitter.off('node:click', recordNodeClick)
       emitter.off('node:pointerdown', recordNodeDown)
       emitter.off('grid:click', recordGridClick)

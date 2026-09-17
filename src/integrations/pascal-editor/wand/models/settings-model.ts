@@ -266,6 +266,8 @@ export function usePascalXRWandSettingsModel(
   const gridSnapStep = useEditor((state) => state.gridSnapStep)
   const cycleGridSnapStep = useEditor((state) => state.cycleGridSnapStep)
   const wallSnappingMode = useEditor((state) => state.snappingModeByContext.wall)
+  const polygonSnappingMode = useEditor((state) => state.snappingModeByContext.polygon)
+  const itemSnappingMode = useEditor((state) => state.snappingModeByContext.item)
   const setSnappingMode = useEditor((state) => state.setSnappingMode)
   const interactionIdle = useInteractionScope((state) => state.scope.kind === 'idle')
   const playerMode = useXRPlayerMode((state) => state.mode)
@@ -597,6 +599,20 @@ export function usePascalXRWandSettingsModel(
       label: 'Wall snap',
       onSelect: () => setSnappingMode('wall', cycleSnappingModeIn('wall', wallSnappingMode)),
       value: getSnappingModeLabel(wallSnappingMode),
+    },
+    {
+      id: 'polygon-snap',
+      kind: 'choice',
+      label: 'Move / surface snap',
+      onSelect: () => setSnappingMode('polygon', cycleSnappingModeIn('polygon', polygonSnappingMode)),
+      value: getSnappingModeLabel(polygonSnappingMode),
+    },
+    {
+      id: 'item-snap',
+      kind: 'choice',
+      label: 'Item snap',
+      onSelect: () => setSnappingMode('item', cycleSnappingModeIn('item', itemSnappingMode)),
+      value: getSnappingModeLabel(itemSnappingMode),
     },
     {
       id: 'exit-vr',

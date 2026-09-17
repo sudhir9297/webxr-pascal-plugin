@@ -58,6 +58,7 @@ type XRUnionCamera = {
 
 type XRBaseCamera = {
   parent?: unknown | null
+  layers?: { mask: number }
 }
 
 type R3FFrameState = {
@@ -105,6 +106,10 @@ export function renderImmersiveXRFrame(
   const xrCamera = renderer.xr.getCamera() as XRUnionCamera
   const baseCamera = camera as XRBaseCamera
   const originalParent = baseCamera.parent
+  const originalMask = baseCamera.layers?.mask
+  // The host enables its grid/overlays on R3F's current (XR) camera. Three
+  // overwrites that mask from the preserved desktop camera on updateCamera.
+  if (baseCamera.layers && xrCamera.layers) baseCamera.layers.mask |= xrCamera.layers.mask
 
   // Three derives the stereo eye matrices from the parent of the application
   // camera passed to updateCamera(). During our renderer-owned XR loop that is
@@ -116,6 +121,7 @@ export function renderImmersiveXRFrame(
     renderer.xr.updateCamera(camera)
   } finally {
     baseCamera.parent = originalParent
+    if (baseCamera.layers && originalMask !== undefined) baseCamera.layers.mask = originalMask
   }
   unifyXRStereoCameraLayers(xrCamera)
   const cameraAutoUpdate = renderer.xr.cameraAutoUpdate

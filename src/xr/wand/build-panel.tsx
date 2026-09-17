@@ -3,6 +3,7 @@
 import type { XRWandAdapter, XRWandBuildItem } from './adapter'
 import { XRWandPaintPanel } from './paint-panel'
 import { PanelIcon } from './panel-icon'
+import { sidePanelPose } from './panel-layout'
 import { SettingRow } from './settings-panel'
 import { PageArrows, PanelFace, PanelHeader, PanelHint, SpatialButton } from './spatial-controls'
 import { SpatialScroll } from './spatial-scroll'
@@ -78,13 +79,13 @@ export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
         />
       )}
       {model.detailMode === 'paint' ? (
-        <group name="xr-build-details" position={[1.44, 0, 0]}>
+        <group name="xr-build-details" {...sidePanelPose(1.4)}>
           <PanelFace width={1.4} height={1.04} />
           <XRWandPaintPanel adapter={adapter} />
         </group>
       ) : (
         (hasChildren || hasDetails) && (
-          <group name="xr-build-details" position={[1.3, 0, 0]}>
+          <group name="xr-build-details" {...sidePanelPose(1.12)}>
             <group position={[0, 0.52 - detailHeight / 2, 0]}>
               <PanelFace width={1.12} height={detailHeight} />
             </group>

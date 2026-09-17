@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Group, Quaternion, Vector3 } from 'three'
+import { sidePanelPose } from './panel-layout'
 import {
-  constrainWorkspacePosition,
   placeWorkspace,
   workspaceParentPoint,
   WorkspaceDrag,
@@ -44,46 +44,34 @@ describe('floating workspace placement and drag ownership', () => {
   test('a second pointer cannot steal, move, or release a drag', () => {
     const drag = new WorkspaceDrag()
     const target = new Vector3()
-    expect(drag.start(1, new Vector3(0, 0, -1), new Vector3(0, 0.3, -1), new Vector3())).toBe(true)
-    expect(drag.start(2, new Vector3(), new Vector3(), new Vector3())).toBe(false)
-    expect(drag.move(2, new Vector3(1, 0, -1), new Vector3(), target)).toBe(false)
+    expect(drag.start(1, new Vector3(0, 0, -1), new Vector3(0, 0.3, -1))).toBe(true)
+    expect(drag.start(2, new Vector3(), new Vector3())).toBe(false)
+    expect(drag.move(2, new Vector3(1, 0, -1), target)).toBe(false)
     expect(drag.end(2)).toBe(false)
-    expect(drag.move(1, new Vector3(0.2, 0, -1), new Vector3(), target)).toBe(true)
-    expect(target.distanceTo(new Vector3())).toBeCloseTo(Math.hypot(0.3, 1))
+    expect(drag.move(1, new Vector3(0.2, 0, -1), target)).toBe(true)
+    expect(target.distanceTo(new Vector3(0.2, 0.3, -1))).toBeLessThan(1e-8)
     expect(target.clone().normalize().distanceTo(new Vector3(0.2, 0.3, -1).normalize())).toBeLessThan(1e-8)
     expect(drag.end(1)).toBe(true)
-    expect(drag.move(1, new Vector3(), new Vector3(), target)).toBe(false)
-    expect(drag.start(2, new Vector3(), new Vector3(0, 0, -1), new Vector3())).toBe(true)
+    expect(drag.move(1, new Vector3(), target)).toBe(false)
+    expect(drag.start(2, new Vector3(), new Vector3(0, 0, -1))).toBe(true)
   })
 
   test('independent workspace drags do not share their grab offsets', () => {
     const a = new WorkspaceDrag()
     const b = new WorkspaceDrag()
-    a.start(1, new Vector3(0, 0, -1), new Vector3(0, 0.2, -1), new Vector3())
-    b.start(2, new Vector3(0, 0, -1), new Vector3(0, -0.3, -1), new Vector3())
+    a.start(1, new Vector3(0, 0, -1), new Vector3(0, 0.2, -1))
+    b.start(2, new Vector3(0, 0, -1), new Vector3(0, -0.3, -1))
     const target = new Vector3()
-    a.move(1, new Vector3(0, 0, -1), new Vector3(), target)
+    a.move(1, new Vector3(0, 0, -1), target)
     expect(target.y).toBeCloseTo(0.2)
-  })
-
-  test('locks distance and rejects invalid tracking data', () => {
-    const eye = new Vector3(10, 2, 3)
-    const near = eye.clone().add(new Vector3(0, 0, -0.1))
-    const far = eye.clone().add(new Vector3(0, 0, -100))
-    expect(constrainWorkspacePosition(near, eye, 1.05)).toBe(true)
-    expect(near.distanceTo(eye)).toBeCloseTo(1.05)
-    expect(constrainWorkspacePosition(far, eye, 1.05)).toBe(true)
-    expect(far.distanceTo(eye)).toBeCloseTo(1.05)
-    expect(constrainWorkspacePosition(eye.clone(), eye, 1.05)).toBe(false)
-    expect(constrainWorkspacePosition(new Vector3(NaN, 0, 0), eye, 1.05)).toBe(false)
   })
 
   test('dragging moves vertically and preserves the initial grab offset', () => {
     const drag = new WorkspaceDrag()
     const target = new Vector3()
-    drag.start(1, new Vector3(0, -0.4, -1.05), new Vector3(0, -0.1, -1.05), new Vector3())
-    expect(drag.move(1, new Vector3(0.2, 0.3, -1.05), new Vector3(), target)).toBe(true)
-    expect(target.length()).toBeCloseTo(Math.hypot(0.1, 1.05))
+    drag.start(1, new Vector3(0, -0.4, -1.05), new Vector3(0, -0.1, -1.05))
+    expect(drag.move(1, new Vector3(0.2, 0.3, -1.05), target)).toBe(true)
+    expect(target.distanceTo(new Vector3(0.2, 0.6, -1.05))).toBeLessThan(1e-8)
     expect(target.y).toBeGreaterThan(0)
     expect(target.clone().normalize().distanceTo(new Vector3(0.2, 0.6, -1.05).normalize())).toBeLessThan(1e-8)
   })
@@ -265,8 +253,8 @@ describe('workspace recall group and parked panel offset', () => {
   })
 })
 
-describe('fixed-radius panel orbit', () => {
-  test('repeated drags and every smoothed frame keep the same distance in a rotated recall group', () => {
+describe('unrestricted panel dragging', () => {
+  test('repeated drags change panel depth without moving the rotated recall group', () => {
     const anchor = new Group()
     const workspace = new Group()
     const panel = new Group()
@@ -280,36 +268,99 @@ describe('fixed-radius panel orbit', () => {
     layout.recall(new Vector3(-1.05, -0.1, 0), true)
     layout.apply(workspace, panel, eye)
     const groupPosition = layout.position.clone()
-    const radius = panel.getWorldPosition(new Vector3()).distanceTo(eye)
     const localEye = workspace.worldToLocal(eye.clone())
     const drag = new WorkspaceDrag()
     for (const direction of [new Vector3(1, 0.5, -1), new Vector3(-1, -0.7, 1), new Vector3(0, 1, 0)]) {
       const grab = panel.position.clone().add(new Vector3(0, -0.3, 0))
-      expect(drag.start(1, grab, panel.position, localEye)).toBe(true)
+      expect(drag.start(1, grab, panel.position)).toBe(true)
       layout.startDrag()
       const target = new Vector3()
       for (const distance of [0.01, 100]) {
         const point = direction.clone().multiplyScalar(distance).add(localEye).add(new Vector3(0, -0.3, 0))
-        expect(drag.move(1, point, localEye, target)).toBe(true)
-        expect(target.distanceTo(localEye)).toBeCloseTo(radius, 8)
+        expect(drag.move(1, point, target)).toBe(true)
+        expect(target.distanceTo(localEye)).toBeCloseTo(direction.length() * distance, 8)
         layout.dragTo(target)
-        for (let frame = 0; frame < 45; frame++) {
+        for (let frame = 0; frame < 240; frame++) {
           layout.update(1 / 90, 24)
           layout.apply(workspace, panel, eye, 1 / 90)
-          expect(panel.getWorldPosition(new Vector3()).distanceTo(eye)).toBeCloseTo(radius, 8)
           expect(layout.position.distanceTo(groupPosition)).toBeLessThan(1e-8)
         }
+        expect(panel.getWorldPosition(new Vector3()).distanceTo(eye)).toBeCloseTo(direction.length() * distance, 8)
       }
       drag.end(1)
     }
   })
 
-  test('invalid starts cannot capture a pointer or establish an invalid orbit', () => {
+  test('pulling the handle closer follows a straight path and retains the released depth', () => {
+    const layout = new WorkspaceLayout()
+    layout.recall(new Vector3(0, -0.1, -1.05), true)
     const drag = new WorkspaceDrag()
-    expect(drag.start(1, new Vector3(), new Vector3(), new Vector3())).toBe(false)
-    expect(drag.start(1, new Vector3(), new Vector3(NaN, 0, -1), new Vector3())).toBe(false)
+    const handle = new Vector3(0, -0.4, 0)
+    expect(drag.start(1, handle, layout.panelOffset)).toBe(true)
+    layout.startDrag()
+    const target = new Vector3()
+    // A captured XR ray hit translates with the hand when its direction is fixed.
+    expect(drag.move(1, handle.clone().add(new Vector3(0, 0, 0.8)), target)).toBe(true)
+    layout.dragTo(target)
+    drag.end(1)
+    let previousDepth = 0
+    for (let frame = 0; frame < 120; frame++) {
+      layout.update(1 / 90, 24)
+      expect(layout.panelOffset.x).toBe(0)
+      expect(layout.panelOffset.y).toBe(0)
+      expect(layout.panelOffset.z).toBeGreaterThanOrEqual(previousDepth)
+      expect(layout.panelOffset.z).toBeLessThanOrEqual(0.8)
+      previousDepth = layout.panelOffset.z
+    }
+    expect(layout.position.distanceTo(new Vector3(0, -0.1, -1.05))).toBeLessThan(1e-8)
+    expect(layout.panelOffset.z).toBeCloseTo(0.8)
+    expect(layout.position.clone().add(layout.panelOffset).z).toBeCloseTo(-0.25)
+  })
+
+  test('invalid tracking cannot capture or move the panel', () => {
+    const drag = new WorkspaceDrag()
+    expect(drag.start(1, new Vector3(), new Vector3(NaN, 0, -1))).toBe(false)
     expect(drag.pointerId).toBeNull()
-    expect(drag.start(1, new Vector3(), new Vector3(0, 0, -1.05), new Vector3())).toBe(true)
-    expect(drag.move(1, new Vector3(Infinity, 0, 0), new Vector3(), new Vector3())).toBe(false)
+    expect(drag.start(1, new Vector3(), new Vector3(0, 0, -1.05))).toBe(true)
+    expect(drag.move(1, new Vector3(Infinity, 0, 0), new Vector3())).toBe(false)
+  })
+})
+
+
+describe('fixed side-panel fold', () => {
+  test('both side-panel widths preserve the edge gap through resizing and workspace movement', () => {
+    const workspace = new Group()
+    const panel = new Group()
+    const content = new Group()
+    const details = new Group()
+    details.name = 'xr-build-details'
+    workspace.add(panel)
+    panel.add(content)
+    content.add(details)
+    const layout = new WorkspaceLayout()
+    layout.recall(new Vector3(0, -0.1, -1.05), true)
+    for (const width of [1.12, 1.4]) {
+      const pose = sidePanelPose(width)
+      details.position.fromArray(pose.position)
+      details.rotation.set(...pose.rotation)
+      const fixedRotation = details.quaternion.clone()
+      for (const scale of [0.65, 1, 1.6]) {
+        content.scale.setScalar(0.62 * scale)
+        for (const offset of [new Vector3(), new Vector3(0.3, -0.5, 0.7), new Vector3(-0.3, 0.6, -1)]) {
+          layout.panelOffset.copy(offset)
+          layout.apply(workspace, panel, new Vector3(), 1 / 90)
+          expect(details.quaternion.angleTo(fixedRotation)).toBeCloseTo(0)
+          for (const y of [-0.52, 0, 0.52]) {
+            const mainEdge = content.localToWorld(new Vector3(0.7, y, 0))
+            const sideEdge = details.localToWorld(new Vector3(-width / 2, y, 0))
+            expect(mainEdge.distanceTo(sideEdge)).toBeCloseTo(0.06 * 0.62 * scale)
+          }
+          const sideUp = new Vector3(0, 1, 0).transformDirection(details.matrixWorld)
+          const mainUp = new Vector3(0, 1, 0).transformDirection(content.matrixWorld)
+          expect(sideUp.dot(mainUp)).toBeCloseTo(1)
+          expect(details.position.z).toBeGreaterThan(0)
+        }
+      }
+    }
   })
 })

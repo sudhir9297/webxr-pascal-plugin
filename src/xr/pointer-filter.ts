@@ -9,6 +9,10 @@ export function isDirectR3FPointerTarget(object: Object3D): boolean {
 }
 
 export function isR3FPointerTarget(object: Object3D): boolean {
+  // Pointer-events raycasts hidden meshes too; rendering visibility must win.
+  for (let ancestor: Object3D | null = object; ancestor; ancestor = ancestor.parent) {
+    if (!ancestor.visible || ancestor.pointerEvents === 'none') return false
+  }
   let current: Object3D | null = object
   while (current) {
     if (current.children.some(isDirectR3FPointerTarget)) return false

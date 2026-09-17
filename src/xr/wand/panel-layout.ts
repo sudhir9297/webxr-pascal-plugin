@@ -50,3 +50,13 @@ export function getPageWithPinnedFirst<T>(items: readonly T[], page: number, pag
     items: pinned === undefined ? current.items : [pinned, ...current.items],
   }
 }
+
+
+/** A fixed inward fold with a small gap between the aligned panel edges. */
+export function sidePanelPose(width: number) {
+  const yaw = -Math.PI / 6
+  return {
+    position: [0.7 + 0.06 + Math.cos(yaw) * width / 2, 0, -Math.sin(yaw) * width / 2] as [number, number, number],
+    rotation: [0, yaw, 0] as [number, number, number],
+  }
+}

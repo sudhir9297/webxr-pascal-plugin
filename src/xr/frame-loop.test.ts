@@ -12,6 +12,25 @@ import {
 } from './frame-loop'
 
 describe('takeOverXRFrameLoop', () => {
+  test('keeps the editor grid layer when Three copies the base camera mask', () => {
+    const base = { layers: { mask: 1 }, parent: null }
+    const stereo = {
+      layers: { mask: 0b1111 },
+      cameras: [{ layers: { mask: 1 } }, { layers: { mask: 1 } }],
+    }
+    const renderer = {
+      render: () => undefined,
+      xr: {
+        cameraAutoUpdate: true,
+        getCamera: () => stereo,
+        updateCamera: () => { stereo.layers.mask = base.layers.mask | 0b110 },
+      },
+    }
+    renderImmersiveXRFrame(renderer, {}, base)
+    expect(stereo.layers.mask & (1 << 3)).not.toBe(0)
+    for (const eye of stereo.cameras) expect(eye.layers.mask).toBe(stereo.layers.mask)
+    expect(base.layers.mask).toBe(1)
+  })
   test('a superseded binding cannot restore over the current XR frame loop', () => {
     const staleBinding = Symbol('stale')
     const currentBinding = Symbol('current')

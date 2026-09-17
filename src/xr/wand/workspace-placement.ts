@@ -17,17 +17,6 @@ export function placeWorkspace(eye: Vector3, direction: Vector3, target: Vector3
   return target
 }
 
-export function constrainWorkspacePosition(position: Vector3, eye: Vector3, radius: number) {
-  const distance = position.distanceTo(eye)
-  if (!Number.isFinite(distance) || !Number.isFinite(radius) || radius < 0.001) return false
-  if (distance < 0.001) return false
-  position
-    .sub(eye)
-    .multiplyScalar(radius / distance)
-    .add(eye)
-  return true
-}
-
 const UP = new Vector3(0, 1, 0)
 const UNIT_SCALE = new Vector3(1, 1, 1)
 
@@ -117,13 +106,7 @@ export class WorkspaceLayout {
 
   update(delta: number, recallSpeed: number) {
     approachWorkspace(this.position, this.recallTarget, delta, recallSpeed)
-    // Interpolate around the eyes in the recall group's yaw-only local frame.
-    // A straight lerp would cut inside the orbit while a drag is smoothing.
-    this.localEye.set(0, -this.position.y, Math.hypot(this.position.x, this.position.z))
-    this.relativePosition.copy(this.panelOffset).sub(this.localEye)
-    this.relativeTarget.copy(this.offsetTarget).sub(this.localEye)
-    approachWorkspace(this.relativePosition, this.relativeTarget, delta, 24)
-    this.panelOffset.copy(this.relativePosition).add(this.localEye)
+    this.panelOffset.lerp(this.offsetTarget, 1 - Math.exp(-24 * delta))
   }
 
   apply(workspace: Object3D, panel: Object3D, eye: Vector3, delta?: number) {
@@ -137,11 +120,11 @@ export class WorkspaceLayout {
     workspace.worldToLocal(this.localEye.copy(eye))
     workspaceFacing(this.relativePosition.copy(panel.position).sub(this.localEye), panel.quaternion, delta)
     panel.updateWorldMatrix(false, true)
+
   }
 
   private localEye = new Vector3()
   private relativePosition = new Vector3()
-  private relativeTarget = new Vector3()
 }
 
 const facingAngles = new Euler(0, 0, 0, 'YXZ')
@@ -166,22 +149,19 @@ export function workspaceFacing(position: Vector3, target: Quaternion, delta?: n
 export class WorkspaceDrag {
   pointerId: number | null = null
   private offset = new Vector3()
-  private radius = 0
 
-  start(pointerId: number, point: Vector3, position: Vector3, eye: Vector3) {
+  start(pointerId: number, point: Vector3, position: Vector3) {
     if (this.pointerId !== null || !point.toArray().every(Number.isFinite)) return false
-    const radius = position.distanceTo(eye)
-    if (!Number.isFinite(radius) || radius < 0.001) return false
-    this.radius = radius
+    if (!position.toArray().every(Number.isFinite)) return false
     this.pointerId = pointerId
     this.offset.copy(position).sub(point)
     return true
   }
 
-  move(pointerId: number, point: Vector3, eye: Vector3, target: Vector3) {
-    if (this.pointerId !== pointerId) return false
+  move(pointerId: number, point: Vector3, target: Vector3) {
+    if (this.pointerId !== pointerId || !point.toArray().every(Number.isFinite)) return false
     target.copy(point).add(this.offset)
-    return constrainWorkspacePosition(target, eye, this.radius)
+    return true
   }
 
   end(pointerId: number) {

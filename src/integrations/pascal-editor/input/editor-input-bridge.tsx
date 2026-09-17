@@ -11,6 +11,7 @@ import {
   type GridEvent,
   minBrushRadius,
   type NodeEvent,
+  nodeRegistry,
   raycastTerrain,
   type SiteNode,
   sceneRegistry,
@@ -30,6 +31,8 @@ import {
   clipTerrainPatchToSite,
   commitStroke,
   createEditorApi,
+  EDITOR_GRID_INPUT_NAME,
+  getPlacementSurface,
   resolveFlattenTarget,
   sculptFieldForSite,
   terrainPointInsideSite,
@@ -49,6 +52,7 @@ import {
   Line,
   LineBasicMaterial,
   type Object3D,
+  type Ray,
   Plane,
   Quaternion,
   Raycaster,
@@ -65,6 +69,7 @@ import {
   shouldRouteXRMove,
   XRSelectReleaseGuard,
 } from './editor-input'
+import { xrPlacementSurfaceHit } from './roof-placement-hit'
 import { applyXRReferenceSpaceRayToWorld, setObjectFloorPlane } from './reference-space-ray'
 
 type XRGridNativeEvent = {
@@ -76,6 +81,7 @@ type XRGridNativeEvent = {
   metaKey: false
   pointerId: number
   pointerType: 'xr'
+  ray: Ray
   shiftKey: false
   stopImmediatePropagation: () => void
   stopPropagation: () => void
@@ -198,8 +204,6 @@ export function XREditorInputBridge() {
   const rayOrigin = useRef(new Vector3())
   const rayDirection = useRef(new Vector3())
   const rayRotation = useRef(new Quaternion())
-  const rayFrame = useRef<XRFrame | null>(null)
-  const raySource = useRef<XRInputSource | null>(null)
   const gridPlane = useRef(new Plane())
   const gridPlaneNormal = useRef(new Vector3())
   const gridPlanePoint = useRef(new Vector3())
@@ -221,7 +225,6 @@ export function XREditorInputBridge() {
 
   const updateRay = useCallback(
     (frame: XRFrame, source: XRInputSource): boolean => {
-      if (rayFrame.current === frame && raySource.current === source) return true
       const referenceSpace = gl.xr.getReferenceSpace()
       if (!referenceSpace) return false
       const pose = frame.getPose(source.targetRaySpace, referenceSpace)
@@ -234,8 +237,6 @@ export function XREditorInputBridge() {
       applyXRReferenceSpaceRayToWorld(rayOrigin.current, rayDirection.current, origin.matrixWorld)
       raycaster.current.ray.set(rayOrigin.current, rayDirection.current)
       raycaster.current.layers.enableAll()
-      rayFrame.current = frame
-      raySource.current = source
       return true
     },
     [gl, origin],
@@ -353,7 +354,7 @@ export function XREditorInputBridge() {
       buttons: number,
       allowRayFallback = false,
     ): GridEvent | null => {
-      const grid = scene.getObjectByName('editor-grid')
+      const grid = scene.getObjectByName(EDITOR_GRID_INPUT_NAME)
       if (!updateRay(frame, source)) return null
       grid?.updateWorldMatrix(true, false)
 
@@ -363,7 +364,11 @@ export function XREditorInputBridge() {
         : null
       levelMesh?.updateWorldMatrix(true, false)
       let levelFloorPoint: Vector3 | null = null
-      if (levelMesh) {
+      const surface = getPlacementSurface()
+      if (surface) {
+        gridPlane.current.setFromNormalAndCoplanarPoint(surface.normal, surface.point)
+        levelFloorPoint = raycaster.current.ray.intersectPlane(gridPlane.current, new Vector3())
+      } else if (levelMesh) {
         setObjectFloorPlane(
           gridPlane.current,
           levelMesh.matrixWorld,
@@ -373,7 +378,7 @@ export function XREditorInputBridge() {
         levelFloorPoint = raycaster.current.ray.intersectPlane(gridPlane.current, new Vector3())
       }
       const hit =
-        !levelFloorPoint && grid?.visible
+        !levelFloorPoint && !surface && grid
           ? raycaster.current.intersectObject(grid, false)[0]
           : undefined
       if (!(levelFloorPoint || hit || allowRayFallback)) return null
@@ -393,6 +398,7 @@ export function XREditorInputBridge() {
         metaKey: false,
         pointerId: pointerIdFor(source),
         pointerType: 'xr',
+        ray: raycaster.current.ray.clone(),
         shiftKey: false,
         stopImmediatePropagation: () => undefined,
         stopPropagation: () => undefined,
@@ -410,12 +416,43 @@ export function XREditorInputBridge() {
 
   const emitGridEvent = useCallback(
     (suffix: EventSuffix, frame: XRFrame, source: XRInputSource, buttons: number): boolean => {
-      const payload = createGridEvent(frame, source, buttons)
+      const editor = useEditor.getState()
+      const roofPlacement = suffix === 'move' && editor.mode === 'build' && !!editor.tool &&
+        !!nodeRegistry.get(editor.tool)?.capabilities?.roofAccessory
+      const payload = createGridEvent(frame, source, buttons, roofPlacement)
       if (!payload) return false
+      if (roofPlacement) {
+        const registered = new Map<Object3D, AnyNode>()
+        const nodes = useScene.getState().nodes
+        for (const [id, object] of sceneRegistry.nodes) {
+          const node = nodes[id as AnyNodeId]
+          if (node) registered.set(object, node)
+        }
+        const surface = xrPlacementSurfaceHit(scene, raycaster.current, registered)
+        const targetType = editor.tool === 'downspout' ? 'gutter' : 'roof'
+        if (surface && surface.node.type === targetType) {
+          const point = surface.hit.point
+          const object = sceneRegistry.nodes.get(surface.node.id)
+          const local = object ? object.worldToLocal(point.clone()) : point
+          const event = {
+            ...payload,
+            node: surface.node,
+            object: surface.hit.object,
+            position: point.toArray() as [number, number, number],
+            localPosition: local.toArray() as [number, number, number],
+            stopPropagation: () => undefined,
+          }
+          // The independent XR grid event would clear the valid roof ghost and
+          // replace it with a red preview at the floor-plane intersection.
+          if (surface.node.type === 'roof') emitter.emit('roof:move', { ...event, node: surface.node })
+          else emitter.emit('gutter:move', { ...event, node: surface.node })
+          return true
+        }
+      }
       emitter.emit(`grid:${suffix}` as `grid:${EventSuffix}`, payload)
       return true
     },
-    [createGridEvent],
+    [createGridEvent, scene],
   )
 
   const emitWallOpeningHover = useCallback(
@@ -579,6 +616,10 @@ export function XREditorInputBridge() {
       emitGridEvent('pointerdown', event.frame, event.inputSource, 1)
     }
     const onSelectEnd = (event: XRInputSourceEvent) => {
+      // Commit the release pose, including movement since the last rendered frame.
+      if (updateRay(event.frame, event.inputSource)) {
+        spatialPointerInput.move(event.inputSource, raycaster.current.ray)
+      }
       if (spatialPointerInput.release(event.inputSource)) {
         selectReleaseGuard.current.cancel(event.inputSource)
         capturedInputSource.current = null
@@ -703,6 +744,7 @@ export function XREditorInputBridge() {
     isWandPanelHit,
     session,
     startTerrainStroke,
+    updateRay,
   ])
 
   useFrame((_, __, frame) => {
