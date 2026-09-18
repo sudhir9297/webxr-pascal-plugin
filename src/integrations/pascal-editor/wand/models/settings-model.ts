@@ -67,6 +67,7 @@ import {
 import type { PascalXRWandBindings } from '../bindings'
 import { usePascalXRWandTerrainModel } from './terrain-model'
 
+import { resolveSettingsHierarchy } from './settings-hierarchy'
 import type { XRWandSettingsOptions } from '../../../../xr/wand/adapter'
 
 const ROWS_PER_PAGE = 5
@@ -330,6 +331,30 @@ export function usePascalXRWandSettingsModel(
     }
   }
 
+  const withHierarchy = (rows: XRWandSettingRow[]): XRWandSettingRow[] => {
+    if (context?.source !== 'node') return rows
+    const hierarchy = resolveSettingsHierarchy(context.node, nodes)
+    const selectNode = (id: string) => {
+      if (useScene.getState().nodes[id as AnyNodeId]) setSelection({ selectedIds: [id as AnyNodeId] })
+    }
+    const labelFor = (node: AnyNode) => node.name || nodeRegistry.get(node.type)?.presentation?.label || node.type
+    const existing = new Set(rows.map((row) => row.id))
+    const navigation: XRWandSettingRow[] = hierarchy.parent ? [{
+      id: 'inspector-parent', kind: 'action', section: 'Navigation',
+      label: `Back to ${labelFor(hierarchy.parent)}`,
+      onSelect: () => selectNode(hierarchy.parent!.id),
+    }] : []
+    const children: XRWandSettingRow[] = hierarchy.children
+      .filter((child) => !existing.has(child.id))
+      .map((child) => ({
+        id: child.id, kind: 'action',
+        section: child.type === 'roof-segment' ? 'Segments' : 'Hosted items',
+        label: labelFor(child),
+        onSelect: () => selectNode(child.id),
+      }))
+    return [...navigation, ...children, ...rows]
+  }
+
   if (options?.scope !== 'workspace' && multiIds.length > 1) {
     const type = resolveHomogeneousSelection(multiIds, nodes)
     const first = nodes[multiIds[0]!]
@@ -368,10 +393,10 @@ export function usePascalXRWandSettingsModel(
     context?.source === 'node' &&
     getNodePanelModel(context.definition)
   ) {
-    const rows = getNodePanelModel(context.definition)!.rows({
+    const rows = withHierarchy(getNodePanelModel(context.definition)!.rows({
       node: context.node, nodes,
       update: (patch) => commitParametricNodeFields(context.node.id, patch),
-    })
+    }))
     const current = options?.unpaged
       ? { currentPage: 0, pageCount: 1, items: rows }
       : getPage(rows, paginationKey === context.key ? paginationPage : 0, pageSize)
@@ -396,13 +421,13 @@ export function usePascalXRWandSettingsModel(
     ]
     const key = context.key
     const page = paginationKey === key ? paginationPage : 0
-    const rows: XRWandSettingRow[] = [
+    const rows: XRWandSettingRow[] = withHierarchy([
       ...toolRows,
       ...sourceRows.map((row) => ({
         ...registryRowModel(row, context, materials, referenceNodes, update),
         section: row.kind === 'field' ? row.group : 'Actions',
       })),
-    ]
+    ])
     const current = options?.unpaged
       ? { currentPage: 0, pageCount: 1, items: rows }
       : getPage(rows, page, pageSize)
