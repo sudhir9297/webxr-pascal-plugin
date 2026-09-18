@@ -15,7 +15,6 @@ import {
 } from '../lib/scale-interaction'
 import { getGodScaleHandState } from '../store/god-mode-hand-store'
 import { useGodScaleView } from '../store/god-mode-view-store'
-import { spatialUIInputOwnership } from '../../spatial-ui'
 
 function isControllerGrabPressed(state: XRControllerState | undefined) {
   if (state?.gamepad?.['xr-standard-squeeze']?.state === 'pressed') return true
@@ -75,10 +74,9 @@ function GodScaleController({ sceneRootRef }: { sceneRootRef: RefObject<Object3D
 
   useFrame((_, __, frame) => {
     const root = sceneRootRef.current
-    const leftPressed =
-      !spatialUIInputOwnership.busy('left') && isControllerGrabPressed(leftController)
-    const rightPressed =
-      !spatialUIInputOwnership.busy('right') && isControllerGrabPressed(rightController)
+    // Grip navigation is independent of the ray's panel hover/select state.
+    const leftPressed = isControllerGrabPressed(leftController)
+    const rightPressed = isControllerGrabPressed(rightController)
     const mode: GodScaleGestureMode | null =
       leftPressed && rightPressed ? 'two' : leftPressed ? 'left' : rightPressed ? 'right' : null
 
@@ -126,8 +124,9 @@ function GodScaleHandController({ sceneRootRef }: { sceneRootRef: RefObject<Obje
     const root = sceneRootRef.current
     const leftHand = getGodScaleHandState('left')
     const rightHand = getGodScaleHandState('right')
-    const leftGrabbed = leftHand.grabbed && !spatialUIInputOwnership.busy('left')
-    const rightGrabbed = rightHand.grabbed && !spatialUIInputOwnership.busy('right')
+    // Palm grabs remain active even when either hand's ray crosses the panel.
+    const leftGrabbed = leftHand.grabbed
+    const rightGrabbed = rightHand.grabbed
     const mode: GodScaleGestureMode | null =
       leftGrabbed && rightGrabbed ? 'two' : leftGrabbed ? 'left' : rightGrabbed ? 'right' : null
 

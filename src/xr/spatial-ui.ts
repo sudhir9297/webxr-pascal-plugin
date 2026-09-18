@@ -22,8 +22,8 @@ export function rayHitsSpatialUI(scene: Object3D, raycaster: Raycaster): boolean
   })
 }
 
-// A UI press keeps ownership when its ray leaves the surface. Hover also prevents
-// a squeeze/palm grab aimed at the menu from starting model manipulation.
+// A UI press keeps ownership when its ray leaves the surface. Human-mode hand
+// locomotion also respects hover; God-mode grip/palm navigation is independent.
 export class SpatialUIInputOwnership {
   private inputs = new Map<XRInputSource, { hovering: boolean; pressed: boolean }>()
 

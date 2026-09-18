@@ -1,7 +1,5 @@
 'use client'
 
-import { commitParametricNodeFields } from './parametric-node-update'
-import { wallSettings } from './wall-settings'
 
 import {
   type AnyNode,
@@ -14,16 +12,23 @@ import {
   getMaterialsForCategory,
   LevelNode,
   MATERIAL_CATEGORIES,
-  type ParamAction,
-  type RoofNode,
-  RoofType as RoofTypeSchema,
+  nodeRegistry,
+  type ParametricDescriptor,
   subscribeLibraryMaterials,
   toLibraryMaterialRef,
   useRegistryVersion,
   useScene,
 } from '@pascal-app/core'
 import {
-  curveReshapeScope,
+  commitParametricNodeFields,
+  getNodePanelModel,
+  applyMultiHeightMode,
+  commitMultiNodeFields,
+  fieldVisibleForAll,
+  reduceFieldValue,
+  reduceHeightBoundMode,
+  resolveUniqueSelectionIds,
+  resolveHomogeneousSelection,
   cycleSnappingModeIn,
   emitDeleteSFX,
   getHistoryCommandState,
@@ -31,9 +36,10 @@ import {
   runRedo,
   runUndo,
   subscribeHistoryCommandState,
-  triggerSFX,
   useEditor,
   useInteractionScope,
+  usePanelToolHints,
+  PALETTE_COLORS,
 } from '@pascal-app/editor'
 import { useViewer } from '@pascal-app/viewer'
 import { useXR } from '@react-three/xr'
@@ -65,7 +71,6 @@ import type { XRWandSettingsOptions } from '../../../../xr/wand/adapter'
 
 const ROWS_PER_PAGE = 5
 const DEFAULT_SETTINGS_CONTEXT_KEY = 'default-settings'
-const XR_COLORS = ['#888888', '#ffffff', '#18181b', '#ef4444', '#22c55e', '#3b82f6']
 
 function cycleOption(options: readonly unknown[], current: unknown, direction: -1 | 1) {
   if (options.length === 0) return undefined
@@ -79,48 +84,6 @@ function formatValue(value: unknown) {
   if (typeof value === 'boolean') return value ? 'On' : 'Off'
   if (typeof value === 'number') return String(Number(value.toFixed(3)))
   return value == null ? 'None' : 'Assigned'
-}
-
-function collectRoofActionRows(node: AnyNode, bindings: PascalXRWandBindings): XRSettingRow[] {
-  if (node.type !== 'roof' && node.type !== 'roof-segment') return []
-  const roofType = node.type === 'roof-segment' ? node.roofType : 'gable'
-  const rows: XRSettingRow[] = bindings.getRoofFootprintSources(roofType).map((source) => ({
-    action: {
-      label: source.value === 'draw' ? 'Draw Footprint' : `Create from ${source.label}`,
-      onClick: () => bindings.activateRoofFootprintSource(source.value),
-    } satisfies ParamAction<AnyNode>,
-    id: `roof-source-${source.value}`,
-    kind: 'action',
-    label: source.value === 'draw' ? 'Draw Footprint' : `Create from ${source.label}`,
-  }))
-
-  rows.push({
-    action: {
-      label: 'Draw Segment',
-      onClick: () => {
-        triggerSFX('sfx:item-pick')
-        const editor = useEditor.getState()
-        editor.setTool('roof')
-        if (editor.mode !== 'build') editor.setMode('build')
-      },
-    } satisfies ParamAction<AnyNode>,
-    id: 'roof-draw-segment',
-    kind: 'action',
-    label: 'Draw Segment',
-  })
-
-  for (const feature of bindings.collectRoofFeatures()) {
-    rows.push({
-      action: {
-        label: `Add ${feature.label}`,
-        onClick: () => bindings.activateRoofFeatureTool(feature),
-      } satisfies ParamAction<AnyNode>,
-      id: `roof-feature-${feature.id}`,
-      kind: 'action',
-      label: `Add ${feature.label}`,
-    })
-  }
-  return rows
 }
 
 function fieldModel({
@@ -145,8 +108,8 @@ function fieldModel({
   const id = `${String(row.field.key)}${row.axis == null ? '' : `-${row.axis}`}`
 
   if (row.field.kind === 'number' || row.field.kind === 'vec3') {
-    const min = row.field.kind === 'number' ? (row.field.min ?? -1000) : -1000
-    const max = row.field.kind === 'number' ? (row.field.max ?? 1000) : 1000
+    const min = row.field.kind === 'number' ? (row.field.min ?? -Infinity) : -Infinity
+    const max = row.field.kind === 'number' ? (row.field.max ?? Infinity) : Infinity
     return {
       id,
       kind: 'stepper',
@@ -154,7 +117,7 @@ function fieldModel({
       max,
       min,
       onChange: (next) => onChange(row, next),
-      step: row.field.kind === 'number' ? (row.field.step ?? 0.1) : 0.1,
+      step: row.field.kind === 'number' ? (row.field.step ?? 0.01) : 0.05,
       unit: row.field.kind === 'number' ? row.field.unit : undefined,
       value: Math.max(min, Math.min(max, typeof value === 'number' ? value : Math.max(0, min))),
     }
@@ -176,7 +139,7 @@ function fieldModel({
   let displayValue = formatValue(value)
   let mapValue = (next: unknown) => next
   if (row.field.kind === 'enum') options = row.field.options
-  if (row.field.kind === 'color') options = XR_COLORS
+  if (row.field.kind === 'color') options = PALETTE_COLORS
   if (row.field.kind === 'material') {
     options = [null, ...materials.map((material) => material.id)]
     const selectedId = getLibraryMaterialIdFromRef(value as never)
@@ -225,10 +188,13 @@ function registryRowModel(
     return {
       disabled: row.action.enabledIf ? !row.action.enabledIf(context.node) : false,
       id: `action-${row.id}`,
+      icon: row.icon ?? (row.action.iconSrc ? { src: row.action.iconSrc } : undefined),
       kind: 'action',
       label: row.label,
-      onSelect: () =>
-        row.action.onClick(useScene.getState().nodes[context.node.id as AnyNodeId] as AnyNode),
+      onSelect: () => {
+        const node = useScene.getState().nodes[context.node.id as AnyNodeId]
+        if (node && (!row.action.enabledIf || row.action.enabledIf(node))) row.action.onClick(node)
+      },
     }
   }
   const { chip } = row.hint
@@ -278,6 +244,7 @@ export function usePascalXRWandSettingsModel(
   const deleteNode = useScene((state) => state.deleteNode)
   const selectedId = selection.selectedIds.length === 1 ? selection.selectedIds[0] : undefined
   const selectedNode = selectedId ? nodes[selectedId as AnyNodeId] : undefined
+  const multiIds = resolveUniqueSelectionIds(selection.selectedIds, nodes)
   const materialVersion = useSyncExternalStore(
     subscribeLibraryMaterials,
     getLibraryMaterialsVersion,
@@ -307,8 +274,26 @@ export function usePascalXRWandSettingsModel(
         tool,
         toolDefaults,
       }),
-    [mode, selectedNode, tool, toolDefaults, options?.scope],
+    [mode, selectedNode, tool, toolDefaults, options?.scope, registryVersion],
   )
+  const visibleToolHints = usePanelToolHints(context?.source === 'tool' ? context.tool : null)
+  const toolOptions = bindings.useToolOptions()
+  const toolRows: XRWandSettingRow[] = (context?.source === 'tool' ? toolOptions : []).map((option) => {
+    const change = (direction: -1 | 1) => {
+      const choices = option.choices.map((choice) => choice.value)
+      const value = cycleOption(choices, option.value, direction)
+      if (typeof value === 'string') option.set(value)
+    }
+    return {
+      id: `tool-option-${option.id}`,
+      section: 'Placement',
+      kind: 'cycle',
+      label: option.label,
+      value: option.choices.find((choice) => choice.value === option.value)?.label ?? option.value,
+      previous: () => change(-1),
+      next: () => change(1),
+    }
+  })
 
   const resolvedBuildingId =
     selection.buildingId && nodes[selection.buildingId]?.type === 'building'
@@ -345,29 +330,55 @@ export function usePascalXRWandSettingsModel(
     }
   }
 
+  if (options?.scope !== 'workspace' && multiIds.length > 1) {
+    const type = resolveHomogeneousSelection(multiIds, nodes)
+    const first = nodes[multiIds[0]!]
+    const multiContext = type && first ? resolveXRSettingsContext({ mode: 'select', tool: null, selectedNode: first }) : null
+    const rows: XRWandSettingRow[] = []
+    if (multiContext?.definition.parametrics) {
+      const parametrics = multiContext.definition.parametrics as ParametricDescriptor<AnyNode>
+      const heightMode = reduceHeightBoundMode(multiIds, nodes)
+      for (const row of collectXRSettingRows(multiContext)) {
+        if (row.kind !== 'field' || row.field.kind === 'custom' || !fieldVisibleForAll(multiIds, row.field.visibleIf, nodes)) continue
+        if (String(row.field.key) === 'height' && (type === 'wall' || type === 'ceiling')) {
+          rows.push({ id: 'height-mode', section: row.group, kind: 'choice', label: 'Top',
+            value: heightMode.kind === 'mixed' ? 'Mixed' : heightMode.value === 'storey' ? 'Follows level' : 'Custom height',
+            onSelect: () => applyMultiHeightMode(multiIds, heightMode.kind === 'same' && heightMode.value === 'custom' ? 'storey' : 'custom', parametrics),
+          })
+          if (heightMode.kind !== 'same' || heightMode.value !== 'custom') continue
+        }
+        const reduced = reduceFieldValue(multiIds, String(row.field.key), nodes)
+        const control = fieldModel({ context: multiContext, row, materials, referenceNodes,
+          onChange: (field, value) => commitMultiNodeFields(multiIds, (node) => createXRSettingPatch({ ...multiContext, node }, field, value), parametrics),
+        })
+        rows.push({ ...control, section: row.group, mixed: reduced.kind === 'mixed' })
+      }
+    }
+    return { contextual: true, contextKey: `selection:${multiIds.join(',')}`, title: `${multiIds.length} selected`,
+      mark: type ?? 'Mixed types', rows, page: 0, pageCount: 1,
+      onClearSelection: () => setSelection({ selectedIds: [] }),
+      emptyMessage: 'This selection has no shared editable properties.',
+      onDelete: multiIds.every((id) => nodeRegistry.get(nodes[id]!.type)?.capabilities.deletable !== false)
+        ? () => { useScene.getState().deleteNodes(multiIds); setSelection({ selectedIds: [] }) } : undefined,
+    }
+  }
+
   if (
     options?.scope !== 'workspace' &&
     context?.source === 'node' &&
-    context.node.type === 'wall'
+    getNodePanelModel(context.definition)
   ) {
-    const wall = context.node
-    const rows = wallSettings(
-      wall,
-      nodes,
-      (patch) => commitParametricNodeFields(wall.id, patch),
-      () => {
-        triggerSFX('sfx:item-pick')
-        useInteractionScope.getState().begin(curveReshapeScope(wall.id))
-        setSelection({ selectedIds: [] })
-      },
-    )
+    const rows = getNodePanelModel(context.definition)!.rows({
+      node: context.node, nodes,
+      update: (patch) => commitParametricNodeFields(context.node.id, patch),
+    })
     const current = options?.unpaged
       ? { currentPage: 0, pageCount: 1, items: rows }
       : getPage(rows, paginationKey === context.key ? paginationPage : 0, pageSize)
     return {
       contextKey: context.key,
       contextual: true,
-      title: wall.name || 'Wall',
+      title: context.node.name || context.title,
       mark: `${rows.length} controls`,
       onClearSelection: () => setSelection({ selectedIds: [] }),
       onDelete: deleteSelectedNode,
@@ -378,113 +389,30 @@ export function usePascalXRWandSettingsModel(
     }
   }
 
-  if (
-    options?.scope !== 'workspace' &&
-    context?.node.type === 'roof' &&
-    context.source === 'node'
-  ) {
-    void registryVersion
-    const roof = context.node as RoofNode
-    const parsedRoofType = RoofTypeSchema.safeParse(
-      useEditor.getState().toolDefaults.roof?.roofType,
-    )
-    const roofType = parsedRoofType.success ? parsedRoofType.data : 'gable'
-    const segmentIds = (roof.children ?? []).filter(
-      (id) => nodes[id as AnyNodeId]?.type === 'roof-segment',
-    )
-    const segmentSet = new Set<string>(segmentIds)
-    let segmentIndex = 0
-    const actions: XRWandSettingRow[] = [
-      ...collectXRSettingRows(context).map(row => ({
-        ...registryRowModel(row, context, materials, referenceNodes, update),
-        section: row.kind === 'field' ? row.group : 'Actions',
-      })),
-      ...bindings.getRoofFootprintSources(roofType).map((source) => ({
-        id: `roof-draw-from-${source.value}`,
-        kind: 'action' as const,
-        label: source.value === 'draw' ? 'Draw Footprint' : `Create from ${source.label}`,
-        onSelect: () => bindings.activateRoofFootprintSource(source.value),
-      })),
-      {
-        id: 'roof-draw-segment',
-        kind: 'action' as const,
-        label: 'Draw Segment',
-        onSelect: () => {
-          triggerSFX('sfx:item-pick')
-          const editor = useEditor.getState()
-          editor.setTool('roof')
-          if (editor.mode !== 'build') editor.setMode('build')
-        },
-      },
-      ...Object.values(nodes).flatMap((node) => {
-        if (!node) return []
-        if (node.type === 'roof-segment' && segmentSet.has(node.id)) {
-          segmentIndex += 1
-          return [
-            {
-              id: `roof-segment-${node.id}`,
-              kind: 'action' as const,
-              label: `Segment ${segmentIndex}: ${node.roofType}`,
-              onSelect: () => setSelection({ selectedIds: [node.id] }),
-            },
-          ]
-        }
-        if (node.parentId && segmentSet.has(node.parentId)) {
-          return [
-            {
-              id: `roof-accessory-${node.id}`,
-              kind: 'action' as const,
-              label: node.name || node.type,
-              onSelect: () => setSelection({ selectedIds: [node.id] }),
-            },
-          ]
-        }
-        return []
-      }),
-      ...bindings.collectRoofFeatures().map((feature) => ({
-        id: `roof-add-${feature.id}`,
-        kind: 'action' as const,
-        label: `Add ${feature.label}`,
-        onSelect: () => bindings.activateRoofFeatureTool(feature),
-      })),
-    ]
-    const key = `node:${roof.id}:roof-actions`
-    const page = paginationKey === key ? paginationPage : 0
-    const current = options?.unpaged
-      ? { currentPage: 0, pageCount: 1, items: actions }
-      : getPage(actions, page, pageSize)
-    return {
-      contextKey: context.key,
-      onClearSelection:
-        context.source === 'node' ? () => setSelection({ selectedIds: [] }) : undefined,
-      contextual: true,
-      mark: `${actions.length} controls`,
-      onDelete: deleteSelectedNode,
-      onPageChange: (nextPage) => setSettingsNavigation(key, nextPage),
-      page: current.currentPage,
-      pageCount: current.pageCount,
-      rows: current.items,
-      title: context.title,
-    }
-  }
 
   if (options?.scope !== 'workspace' && context) {
     const sourceRows = [
-      ...collectRoofActionRows(context.node, bindings),
-      ...collectXRSettingRows(context),
+      ...collectXRSettingRows(context, visibleToolHints),
     ]
     const key = context.key
     const page = paginationKey === key ? paginationPage : 0
+    const rows: XRWandSettingRow[] = [
+      ...toolRows,
+      ...sourceRows.map((row) => ({
+        ...registryRowModel(row, context, materials, referenceNodes, update),
+        section: row.kind === 'field' ? row.group : 'Actions',
+      })),
+    ]
     const current = options?.unpaged
-      ? { currentPage: 0, pageCount: 1, items: sourceRows }
-      : getPage(sourceRows, page, pageSize)
+      ? { currentPage: 0, pageCount: 1, items: rows }
+      : getPage(rows, page, pageSize)
     return {
       contextKey: context.key,
       onClearSelection:
         context.source === 'node' ? () => setSelection({ selectedIds: [] }) : undefined,
       contextual: true,
       emptyMessage: 'No spatial settings are exposed for this item yet.',
-      mark: `${sourceRows.length} controls`,
+      mark: `${rows.length} controls`,
       onDelete:
         context.source === 'node' && context.definition.capabilities.deletable !== false
           ? deleteSelectedNode
@@ -492,10 +420,7 @@ export function usePascalXRWandSettingsModel(
       onPageChange: (nextPage) => setSettingsNavigation(key, nextPage),
       page: current.currentPage,
       pageCount: current.pageCount,
-      rows: current.items.map((row) => ({
-        ...registryRowModel(row, context, materials, referenceNodes, update),
-        section: row.kind === 'field' ? row.group : 'Actions',
-      })),
+      rows: current.items,
       title: context.title,
     }
   }

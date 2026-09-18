@@ -29,6 +29,7 @@ const XR_INPUT_EVENT_TIMEOUT_MS = 150
 const XR_FRAME_TIMEOUT_MS = 100
 
 export type XREmulatorTestHarness = {
+  readWristWatch: () => Record<string, unknown>
   readGrid: () => Record<string, unknown>
   setTestSceneTransform: (scale: number, position: [number, number, number], yaw: number) => Promise<boolean>
   clickNodeOnce: (nodeId: string) => Promise<Record<string, unknown>>
@@ -728,6 +729,17 @@ export function XREmulatorTestHarnessBridge() {
 
     let dragTrace: unknown[] = []
     const harness: XREmulatorTestHarness = {
+      readWristWatch: () => {
+        const watch = scene.getObjectByName('xr-wrist-watch')
+        const face = scene.getObjectByName('xr-workspace-hand-shortcut')
+        const position = watch?.getWorldPosition(new Vector3())
+        return {
+          tracked: watch?.visible ?? false,
+          faceVisible: face?.visible ?? false,
+          position: position?.toArray(),
+          mode: useXRPlayerMode.getState().mode,
+        }
+      },
       readGrid: () => {
         const grid = scene.getObjectByName('pascal-editor-grid-input')
         return {

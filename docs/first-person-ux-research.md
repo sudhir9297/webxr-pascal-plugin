@@ -1,0 +1,43 @@
+# First-person XR UX research notes
+
+Reviewed 2026-09-18. Scope: first-party web documentation only; no local code inspection. “Documented” below means product behavior, sample behavior, or vendor guidance—not independently validated results. Recommendations are this report’s synthesis for a hands-only first-person experience.
+
+## Documented practices and constraints
+
+### VRChat: product precedents, not published research results
+
+- VRChat introduced Quest hands-only locomotion and menu interaction in its experimental 2022.4.1 release. Its standalone-only restriction was historical: 2024.3.1 subsequently introduced SteamVR skeletal hand tracking and finger-based input on PC. Do not repeat the 2022 PC restriction as current universal behavior. [2022.4.1](https://docs.vrchat.com/docs/vrchat-202241), [2024.3.1](https://docs.vrchat.com/docs/vrchat-202431).
+- PC support requires a driver supplying sufficiently high-fidelity hand skeletons. SteamVR-specific input features do not apply to the Meta PC or Viveport versions. Tracked avatar fingers alone therefore do not establish availability of hands-only controls. [SteamVR Input 2.0](https://docs.vrchat.com/docs/steamvr-input-20).
+- Gesture collisions are a documented product problem: 2024.4.1 added alternative Quick Menu openers because streaming applications used the same gesture for the SteamVR dashboard. The wrist-mounted Circle-Key works with one hand; the Push Button needs the opposite index finger. Users select the opener in Controls. That release also added Action Menu access by looking at the right palm and pinching thumb to pinky. [2024.4.1](https://docs.vrchat.com/docs/vrchat-202441).
+- Documentation can lag releases: the Action Menu page still says hand tracking lacks access, contradicting the dated 2024.4.1 addition. Prefer the explicit later release evidence for that feature, then verify behavior on the target client. [Action Menu](https://docs.vrchat.com/docs/action-menu).
+- VRChat release notes acknowledge tunneling and Holoport comfort settings, including persistence fixes. This establishes features, not comparative comfort efficacy or a hands-only gesture specification. [2023.1.2](https://docs.vrchat.com/docs/vrchat-202312).
+
+No reviewed VRChat source reports a controlled hands-only locomotion UX study, participant results, or evidence that its gesture mapping is optimal. Exact current movement gestures were not established by the reviewed text; do not invent them or substitute community descriptions.
+
+### Meta: explicit locomotion and accessibility guidance
+
+- Meta’s hands teleport mapping separates entry, aiming, confirmation, and cancellation: a thumb microgesture tap enters aiming with an arc/reticle; another tap teleports; opening the hand cancels. The mapping is symmetric across hands. Its current microgesture interface captures discrete taps, not continuous input, so this mapping does not support slide or smooth turning; hands users switch to teleport. This is a constraint of that input scheme, not proof that all hand tracking forbids continuous locomotion. [Artificial locomotion input maps](https://developers.meta.com/horizon/design/locomotion-input-maps/) (2026-02-18).
+- Meta recommends teleport and snap turn defaults, opt-in slide/smooth turn, and settings changeable during use. Locomotion preferences are app-specific, with no shared system preference automatically carrying between applications. [Locomotion user preferences](https://developers.meta.com/horizon/design/locomotion-user-preferences/).
+- Limit acceleration events and optic flow; maintain consistent frame rate and offer comfort choices. Teleport can still disorient; physical movement and arm-driven locomotion can fatigue or exclude people. Support seated use and artificial movement for limited space or mobility. These are vendor recommendations, not guarantees that any technique eliminates sickness. [Best practices](https://developers.meta.com/horizon/design/locomotion-best-practices/), [Comfort and usability](https://developers.meta.com/horizon/design/locomotion-comfort-usability/).
+- Keep hands near a neutral resting posture and frequent interactions within comfortable reach. Occlusion and leaving the tracking volume reduce reliability; severe occlusion can make the tracked hand disappear. [Hands](https://developers.meta.com/horizon/design/hands/), [Limitations and mitigations](https://developers.meta.com/horizon/design/hands-limitations-mitigations/).
+- Provide alternative inputs for gestures, seated/stationary use, early saved preferences, and redundant feedback rather than color or sound alone. Meta gives a minimum touch target of approximately 22 × 22 mm / 48 × 48 dp / 3° at 0.42 m; these contextual units are not interchangeable at arbitrary distances. Its multiple-locomotion VRC is marked recommended, not required. [Accessibility](https://developers.meta.com/horizon/design/accessibility/), [VRC.Quest.Accessibility.8](https://developers.meta.com/horizon/resources/vrc-quest-accessibility-8/).
+
+### Unity: interaction arbitration and comfort building blocks
+
+- The XRI 3.0.11 Hands Interaction Demo supports controllers and hands through an input modality manager. Its poke detector mediates poke versus ray/pinch, and its Meta system gesture detector disables interactions during menu palm-pinches. This is a concrete sample precedent for preventing one gesture from activating multiple contexts. Its OpenXR/Meta hand-aim dependencies make it a native Unity reference, not a WebXR implementation contract. [Hands Interaction Demo](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.0/manual/samples-hands-interaction-demo.html).
+- XRI supplies teleport, snap turn, continuous movement/turning, and other locomotion providers. Availability of a provider does not establish a suitable hands-only input mapping or accessible defaults. [Locomotion overview](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.0/manual/locomotion.html).
+- Unity documents a configurable tunneling vignette intended to mitigate motion sickness, with aperture and transition settings and per-provider activation. It advises nonzero transition times to reduce distraction from abrupt field-of-view changes; this does not establish a universally effective setting. [Tunneling Vignette Controller](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.0/manual/tunneling-vignette-controller.html).
+
+## Recommendations for the local audit (inferences, not observed code defects)
+
+1. Use an explicit locomotion gate with visible aiming/active state and an easy cancel. Give menu, manipulation, and locomotion contexts clear priority so the same pinch cannot both select and move. Basis: Meta’s staged teleport mapping and Unity’s gesture arbitration.
+2. Cancel pending movement on tracking loss, session interruption, or input-modality change; require fresh deliberate activation after recovery. Do not treat a disappearing hand as a successful gesture release. This fail-safe policy is a recommendation derived from tracking limitations, not an asserted VRChat implementation.
+3. Start with teleport and snap turn; expose continuous options and optional vignette controls in an always-reachable comfort menu. Preserve preferences, and communicate any fallback when switching from controllers to hands. Basis: Meta’s preference and input-map guidance.
+4. Make exit/cancel and essential menus usable with one hand, from a seated posture, without sustained elevated arms. Offer an alternative to precision pinch or two-handed gestures. Hands-only input alone is not an accessibility solution. Basis: VRChat’s alternative openers and Meta accessibility guidance.
+5. Validate accidental activation during conversational gestures, menu opening, object grabbing, hand occlusion, and controller/hands transitions. Include left/right-hand use, limited dexterity, seated users, and motion-sensitive users. These are proposed validation cases, not published VRChat study findings.
+
+## WebXR transfer boundary
+
+Meta’s WebXR documentation exposes 25 hand joints and a hand input source with an emulated targeting ray intended for UI in front of the user. It does not establish that native Interaction SDK microgesture events or Unity gesture arbitration are automatically available in a browser. Verify target browser/runtime capabilities and conflicts with system gestures before adopting native mappings. [WebXR Hands](https://developers.meta.com/horizon/documentation/web/webxr-hands/).
+
+No local implementation claims or code changes accompany these notes. Device testing and user evaluation remain necessary to choose gesture thresholds, timing, movement speed, and comfort parameters.

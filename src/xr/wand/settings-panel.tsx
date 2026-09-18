@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from 'react'
 import { SpatialScroll } from './spatial-scroll'
 import { SpatialLine } from './spatial-line'
+import { PanelIcon } from './panel-icon'
 import type { XRWandAction, XRWandAdapter, XRWandSettingRow, XRWandSettingsModel } from './adapter'
 import {
   PanelHeader,
@@ -25,11 +26,16 @@ function ActionButton({ action, width = 0.7 }: { action: XRWandAction; width?: n
       position={[0, 0, 0]}
       size={[width, 0.075]}
     >
+      {action.icon && (
+        <group position={[-width / 2 + 0.047, 0, 0]}>
+          <PanelIcon src={action.icon.src} color={action.icon.color} positionY={0} size={0.058} />
+        </group>
+      )}
       <SpatialText
         color={XR_WAND_THEME.text}
         fontSize={width < 0.4 ? 0.021 : 0.026}
-        maxWidth={width - 0.04}
-        position={[0, 0, 0.012]}
+        maxWidth={width - (action.icon ? 0.12 : 0.04)}
+        position={[action.icon ? 0.04 : 0, 0, 0.012]}
       >
         {action.label}
       </SpatialText>
@@ -57,6 +63,7 @@ export function SettingRow({ row }: { row: XRWandSettingRow }) {
   if (row.kind === 'stepper') {
     return (
       <SettingStepper
+        mixed={row.mixed}
         label={row.label}
         max={row.max}
         min={row.min}
@@ -75,7 +82,7 @@ export function SettingRow({ row }: { row: XRWandSettingRow }) {
         name={`xr-setting-${row.id}`}
         next={row.next}
         previous={row.previous}
-        value={row.value}
+        value={row.mixed ? 'Mixed' : row.value}
       />
     )
   }
@@ -85,7 +92,7 @@ export function SettingRow({ row }: { row: XRWandSettingRow }) {
         label={row.label}
         name={`xr-setting-${row.id}`}
         onClick={row.onSelect}
-        value={row.value}
+        value={row.mixed ? 'Mixed' : row.value}
       />
     )
   }
@@ -153,7 +160,7 @@ function WideSettingRow({ row }: { row: XRWandSettingRow }) {
         {label}
       </SpatialText>
       {row.kind === 'choice' ? (
-        button(`xr-setting-${row.id}`, row.value, 0.32, 0.46, row.onSelect)
+        button(`xr-setting-${row.id}`, row.mixed ? 'Mixed' : row.value, 0.32, 0.46, row.onSelect)
       ) : (
         <>
           {button(
@@ -172,7 +179,7 @@ function WideSettingRow({ row }: { row: XRWandSettingRow }) {
             maxWidth={0.28}
             position={[0.32, 0, 0.014]}
           >
-            {row.kind === 'stepper'
+            {row.mixed ? 'Mixed' : row.kind === 'stepper'
               ? `${Number(row.value.toFixed(3))}${row.unit ? ` ${row.unit}` : ''}`
               : row.value}
           </SpatialText>

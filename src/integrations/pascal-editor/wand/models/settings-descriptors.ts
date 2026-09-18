@@ -28,6 +28,7 @@ export type XRSettingFieldRow = {
 }
 
 export type XRSettingActionRow = {
+  icon?: { src: string }
   action: ParamAction<AnyNode>
   id: string
   kind: 'action'
@@ -95,12 +96,12 @@ export function resolveXRSettingsContext({
   }
 }
 
-export function collectXRSettingRows(context: XRSettingsContext): XRSettingRow[] {
+export function collectXRSettingRows(context: XRSettingsContext, visibleHints = context.definition.toolHints): XRSettingRow[] {
   const parametrics = context.definition.parametrics as ParametricDescriptor<AnyNode> | undefined
   const rows: XRSettingRow[] = []
 
   if (context.source === 'tool') {
-    context.definition.toolHints?.forEach((hint, index) => {
+    visibleHints?.forEach((hint, index) => {
       if (!hint.chip || (hint.visible && !hint.visible.value())) return
       rows.push({
         hint: hint as ToolHint & { chip: NonNullable<ToolHint['chip']> },

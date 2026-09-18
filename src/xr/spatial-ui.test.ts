@@ -41,6 +41,8 @@ describe('spatial UI input routing', () => {
     scene.add(panel, shortcut)
     expect(isSpatialUIObject(mesh)).toBe(true)
     expect(rayHitsSpatialUI(scene, new Raycaster(new Vector3(), new Vector3(0, 0, -1)))).toBe(true)
+    shortcut.visible = false
+    expect(rayHitsSpatialUI(scene, new Raycaster(new Vector3(), new Vector3(0, 0, -1)))).toBe(false)
     mesh.geometry.dispose()
     mesh.material.dispose()
   })

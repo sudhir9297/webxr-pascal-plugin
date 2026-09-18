@@ -45,6 +45,7 @@ function roundedShape(width: number, height: number, radius = 0.018) {
 export function SpatialButton({
   children,
   color = text,
+  cornerRadius = 0.025,
   disabled = false,
   name,
   onClick,
@@ -54,6 +55,7 @@ export function SpatialButton({
 }: {
   children?: ReactNode
   color?: string
+  cornerRadius?: number
   disabled?: boolean
   name?: string
   onClick?: () => void
@@ -66,7 +68,7 @@ export function SpatialButton({
   const [hovered, setHovered] = useState(false)
   const [pressed, setPressed] = useState(false)
   const hoverLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const shape = useMemo(() => roundedShape(size[0], size[1], 0.025), [size[0], size[1]])
+  const shape = useMemo(() => roundedShape(size[0], size[1], cornerRadius), [size[0], size[1], cornerRadius])
   const points = useMemo(() => shapeLinePoints(shape), [shape])
 
   useEffect(
@@ -335,6 +337,7 @@ export function PageArrows({
 }
 
 export function SettingStepper({
+  mixed,
   label,
   max,
   min,
@@ -344,6 +347,7 @@ export function SettingStepper({
   unit,
   value,
 }: {
+  mixed?: boolean
   label: string
   max: number
   min: number
@@ -388,7 +392,7 @@ export function SettingStepper({
         fontSize={0.023}
         position={[0.22, 0, 0.012]}
       >
-        {Number(value.toFixed(3))}
+        {mixed ? 'Mixed' : Number(value.toFixed(3))}
         {unit ? ` ${unit}` : ''}
       </SpatialText>
       <SpatialButton

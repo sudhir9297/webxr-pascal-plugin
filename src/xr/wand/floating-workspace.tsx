@@ -3,17 +3,19 @@
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { isXRInputSourceState, useXR, useXRInputSourceState } from '@react-three/xr'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { type Group, Matrix4, type Mesh, Vector3 } from 'three'
+import { type Group, Matrix4, type Mesh, Shape, Vector3 } from 'three'
 import { useWebXRSceneLayers } from '../layers'
 import { isQuestYPressed } from '../controller-buttons'
 import { useXRPlayerMode } from '../mode-switching/store/player-mode'
 import type { XRWandAdapter } from './adapter'
+import { XRWandItemsPanel } from './items-panel'
 import { XRWandBuildPanel } from './build-panel'
 import { XRWandPaintPanel } from './paint-panel'
 import { XR_WAND_PANEL_INPUT_NAME } from './panel-layout'
 import { useXRWandPanelSettings } from './panel-settings'
 import { XRWandSettingsPanel } from './settings-panel'
 import { SpatialText } from './spatial-text'
+import { SpatialLine, shapeLinePoints } from './spatial-line'
 import { XR_WAND_THEME } from './theme'
 import { PanelIcon } from './panel-icon'
 import { PanelFace, SpatialButton } from './spatial-controls'
@@ -33,13 +35,21 @@ import { WorkspaceResize } from './workspace-resize'
 import { WorkspaceResizeHandles } from './workspace-resize-handles'
 
 type PointerDownEvent = ThreeEvent<PointerEvent>
-type WorkspaceTab = 'paint' | 'build' | 'settings'
-const TABS = ['paint', 'build', 'settings'] as const
+type WorkspaceTab = 'paint' | 'build' | 'items' | 'settings'
+const TABS = ['build', 'paint', 'items', 'settings'] as const
 // Keep the first control visually aligned with the top of the 1.04 m rail.
 const RAIL_TOP = 0.49
 const RAIL_ITEM_GAP = 0.03
 const RAIL_ITEM_HEIGHT = 0.105
-const DRAG_AREA_Y = -0.64
+const DRAG_AREA_Y = -0.585
+const DRAG_BAR_RADIUS = 0.014
+const DRAG_BAR_LENGTH = 0.44
+const DRAG_BAR_OUTLINE = shapeLinePoints(
+  new Shape()
+    .absarc(DRAG_BAR_LENGTH / 2, 0, DRAG_BAR_RADIUS, -Math.PI / 2, Math.PI / 2, false)
+    .absarc(-DRAG_BAR_LENGTH / 2, 0, DRAG_BAR_RADIUS, Math.PI / 2, Math.PI * 1.5, false)
+    .closePath(),
+)
 
 function RailButton({
   iconSrc,
@@ -89,6 +99,8 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   const previousMode = useRef(playerMode)
   const visible = useXRWorkspace((state) => state.visible)
   const drag = useRef(new WorkspaceDrag())
+  const dragBarVisual = useRef<Group>(null)
+  const dragBarHovered = useRef(false)
   const dragSource = useRef<XRInputSource | null>(null)
   const eye = useRef(new Vector3())
   const viewerMatrix = useRef(new Matrix4())
@@ -121,11 +133,15 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   }, [endDrag, playerMode])
 
   useEffect(() => {
-    if (!visible) endDrag()
+    if (!visible) {
+      dragBarHovered.current = false
+      endDrag()
+    }
   }, [endDrag, visible])
 
   useEffect(() => {
     handledRecall.current = -1
+    dragBarHovered.current = false
     viewerTracked.current = false
     recallButton.current.reset()
     if (session) useXRWorkspace.getState().recall()
@@ -150,6 +166,14 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   }, [endDrag, session])
 
   useFrame((_, delta, frame) => {
+    if (dragBarVisual.current) {
+      const highlighted = visible && (dragBarHovered.current || drag.current.pointerId !== null)
+      const targetScale = highlighted ? 1.08 : 1
+      const currentScale = dragBarVisual.current.scale.x
+      dragBarVisual.current.scale.setScalar(
+        currentScale + (targetScale - currentScale) * (1 - Math.exp(-20 * delta)),
+      )
+    }
     const group = root.current
     if (!group || !workspace.current || !anchor.current || !session) return
     // The host renderer reparents its stereo camera during rendering. Read the
@@ -311,15 +335,16 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
               <group name="xr-workspace-content">
                 <PanelFace width={1.4} height={1.04} />
                 {tab === 'paint' && <XRWandPaintPanel adapter={adapter} />}
-                {tab === 'build' && <XRWandBuildPanel adapter={adapter} />}
+                {tab === 'build' && <XRWandBuildPanel adapter={adapter} separateItems={!!adapter.useItemsModel} />}
+                {tab === 'items' && adapter.useItemsModel && <XRWandItemsPanel useItemsModel={adapter.useItemsModel} />}
                 {tab === 'settings' && <XRWandSettingsPanel adapter={adapter} panelPlacement />}
               </group>
               <group name="xr-workspace-tool-rail" position={[-0.8, 0, 0]}>
                 <PanelFace width={0.16} height={1.04} />
-                {TABS.map((value, index) => (
+                {TABS.filter((value) => value !== 'items' || adapter.useItemsModel).map((value, index) => (
                   <RailButton
                     key={value}
-                    iconSrc={`/icons/${value}.webp`}
+                    iconSrc={`/icons/${value === 'items' ? 'couch' : value}.webp`}
                     name={`xr-workspace-tab-${value}`}
                     y={RAIL_TOP - RAIL_ITEM_HEIGHT / 2 - index * (RAIL_ITEM_HEIGHT + RAIL_ITEM_GAP)}
                     selected={tab === value}
@@ -328,22 +353,37 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
                 ))}
                 <SpatialButton
                   name="xr-workspace-hide"
-                  position={[0, -0.2, 0]}
-                  size={[0.14, 0.12]}
+                  position={[0, -0.3025, 0]}
+                  size={[0.115, RAIL_ITEM_HEIGHT]}
                   onClick={() => useXRWorkspace.getState().hide()}
                 >
-                  <SpatialText color="#ffffff" fontSize={0.024} maxWidth={0.13} position={[0, 0, 0.012]}>
-                    {'Hide\npanel'}
+                  <SpatialLine color={XR_WAND_THEME.muted} points={[
+                    [-0.024, 0.034, 0.012], [0.024, 0.034, 0.012],
+                    [0.024, 0.002, 0.012], [-0.024, 0.002, 0.012], [-0.024, 0.034, 0.012],
+                  ]} />
+                  <SpatialLine color={XR_WAND_THEME.text} points={[
+                    [-0.012, 0.018, 0.013], [0.012, 0.018, 0.013],
+                  ]} />
+                  <SpatialText color={XR_WAND_THEME.muted} fontSize={0.018} maxWidth={0.105} position={[0, -0.025, 0.012]}>
+                    Hide
                   </SpatialText>
                 </SpatialButton>
                 <SpatialButton
                   name="xr-workspace-recenter"
-                  position={[0, -0.41, 0]}
-                  size={[0.14, 0.16]}
+                  position={[0, -0.4375, 0]}
+                  size={[0.115, RAIL_ITEM_HEIGHT]}
                   onClick={() => useXRWorkspace.getState().recall()}
                 >
-                  <SpatialText color="#ffffff" fontSize={0.021} maxWidth={0.13} position={[0, 0, 0.012]}>
-                    {'Bring\nworkspace\nhere'}
+                  <SpatialLine color={XR_WAND_THEME.muted} points={[
+                    [-0.025, 0.034, 0.012], [-0.009, 0.018, 0.012],
+                    [-0.009, 0.033, 0.012], [-0.009, 0.018, 0.012], [-0.024, 0.018, 0.012],
+                  ]} />
+                  <SpatialLine color={XR_WAND_THEME.muted} points={[
+                    [0.025, 0.002, 0.012], [0.009, 0.018, 0.012],
+                    [0.009, 0.003, 0.012], [0.009, 0.018, 0.012], [0.024, 0.018, 0.012],
+                  ]} />
+                  <SpatialText color={XR_WAND_THEME.muted} fontSize={0.018} maxWidth={0.105} position={[0, -0.025, 0.012]}>
+                    Bring here
                   </SpatialText>
                 </SpatialButton>
               </group>
@@ -351,6 +391,8 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
                 name="xr-workspace-drag-handle"
                 layers={overlay}
                 position={[-0.09, DRAG_AREA_Y, 0]}
+                onPointerEnter={() => { dragBarHovered.current = true }}
+                onPointerLeave={() => { dragBarHovered.current = false }}
                 onPointerDown={startDrag}
                 onPointerMove={moveDrag}
                 onPointerUp={finishDrag}
@@ -359,10 +401,20 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
               >
                 <planeGeometry args={[0.52, 0.11]} />
                 <meshBasicMaterial depthWrite={false} opacity={0} transparent />
-                <mesh rotation={[0, 0, Math.PI / 2]} raycast={() => null}>
-                  <capsuleGeometry args={[0.022, 0.36, 6, 16]} />
-                  <meshBasicMaterial color={XR_WAND_THEME.surface} toneMapped={false} />
-                </mesh>
+                <group ref={dragBarVisual}>
+                  <mesh rotation={[0, 0, Math.PI / 2]} raycast={() => null}>
+                    <capsuleGeometry args={[DRAG_BAR_RADIUS, DRAG_BAR_LENGTH, 6, 16]} />
+                    <meshBasicMaterial color={XR_WAND_THEME.surface} toneMapped={false} />
+                  </mesh>
+                  <group position={[0, 0, DRAG_BAR_RADIUS]}>
+                    <SpatialLine
+                      color={XR_WAND_THEME.border}
+                      lineWidth={1.4}
+                      opacity={0.9}
+                      points={DRAG_BAR_OUTLINE}
+                    />
+                  </group>
+                </group>
               </mesh>
             </group>
           </group>

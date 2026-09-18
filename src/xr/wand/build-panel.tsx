@@ -11,7 +11,7 @@ import { SpatialLine } from './spatial-line'
 import { SpatialText } from './spatial-text'
 import { XR_WAND_THEME } from './theme'
 
-function PaletteTile({
+export function PaletteTile({
   item,
   index,
   compact = false,
@@ -34,19 +34,21 @@ function PaletteTile({
       selected={item.active}
       size={compact ? [0.3, 0.165] : [0.285, 0.21]}
     >
-      <PanelIcon
-        color={item.icon.color}
-        positionY={compact ? 0.023 : 0.025}
-        size={compact ? 0.078 : 0.11}
-        src={item.icon.src}
-      />
+      {item.icon && (
+        <PanelIcon
+          color={item.icon.color}
+          positionY={compact ? 0.023 : 0.025}
+          size={compact ? 0.078 : 0.11}
+          src={item.icon.src}
+        />
+      )}
       <SpatialText
         anchorX="center"
         anchorY="middle"
         color={XR_WAND_THEME.text}
-        fontSize={compact ? 0.021 : 0.025}
+        fontSize={item.icon ? (compact ? 0.021 : 0.025) : 0.03}
         maxWidth={compact ? 0.27 : 0.26}
-        position={[0, compact ? -0.052 : -0.067, 0.012]}
+        position={[0, item.icon ? (compact ? -0.052 : -0.067) : 0, 0.012]}
         textAlign="center"
       >
         {item.label}
@@ -55,11 +57,27 @@ function PaletteTile({
   )
 }
 
-export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
-  const model = adapter.useBuildModel()
+export function XRWandBuildPanel({ adapter, separateItems = false }: { adapter: XRWandAdapter; separateItems?: boolean }) {
+  const model = adapter.useBuildModel({ separateItems })
   const hasChildren = !!model.secondaryItems?.length
   const details = adapter.useSettingsModel({ scope: 'context', unpaged: true })
-  const hasDetails = details.contextual && (details.rows.length > 0 || !!details.onDelete)
+  const detailRows = details.rows
+  const hasDetails = details.contextual && (detailRows.length > 0 || !!details.onDelete)
+  const optionGroups: { title: string; items: XRWandBuildItem[]; offset: number }[] = []
+  let groupedHeight = 0
+  for (const item of model.secondaryItems ?? []) {
+    if (!item.section) continue
+    let group = optionGroups.find((entry) => entry.title === item.section)
+    if (!group) {
+      group = { title: item.section, items: [], offset: 0 }
+      optionGroups.push(group)
+    }
+    group.items.push(item)
+  }
+  for (const group of optionGroups) {
+    group.offset = groupedHeight
+    groupedHeight += 0.065 + Math.ceil(group.items.length / 3) * 0.19 + 0.035
+  }
   const detailHeight = hasChildren ? (hasDetails ? 1.52 : 0.78) : 1.04
 
   return (
@@ -97,17 +115,27 @@ export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
             {hasChildren && (
               <>
                 <SpatialScroll key={model.section} name="xr-build-options-scroll"
-                  width={1.01} height={0.38} contentHeight={Math.ceil((model.secondaryItems?.length ?? 0) / 3) * 0.19}
+                  width={1.01} height={0.38} contentHeight={optionGroups.length ? groupedHeight : Math.ceil((model.secondaryItems?.length ?? 0) / 3) * 0.19}
                   position={[-0.014, 0.1875, 0]}>
-                  <group position={[0, -0.1875, 0]}>
+                  {optionGroups.length ? optionGroups.map((group) => (
+                    <group key={group.title} position={[0, -group.offset, 0]}>
+                      <SpatialText anchorX="left" color={XR_WAND_THEME.muted} fontSize={0.023}
+                        position={[-0.48, 0.17, 0.012]}>{group.title}</SpatialText>
+                      <group position={[0, -0.2375, 0]}>
+                        {group.items.map((item, index) => (
+                          <PaletteTile item={item} index={index} key={item.id} compact />
+                        ))}
+                      </group>
+                    </group>
+                  )) : <group position={[0, -0.1875, 0]}>
                     {model.secondaryItems?.map((item, index) => (
                       <PaletteTile item={item} index={index} key={item.id} compact />
                     ))}
-                  </group>
+                  </group>}
                 </SpatialScroll>
                 <SpatialText color={XR_WAND_THEME.muted} fontSize={0.018}
                   position={[0, -0.055, 0.012]}>
-                  {model.secondaryItems!.length > 6 ? 'Hold trigger or pinch, then drag to scroll' : `${model.secondaryItems!.length} options`}
+                  {groupedHeight > 0.38 || model.secondaryItems!.length > 6 ? 'Hold trigger or pinch, then drag to scroll' : `${model.secondaryItems!.length} options`}
                 </SpatialText>
                 <SpatialLine
                   color={XR_WAND_THEME.border}
@@ -133,15 +161,15 @@ export function XRWandBuildPanel({ adapter }: { adapter: XRWandAdapter }) {
                   </SpatialText>
                 )}
                 <SpatialScroll key={details.title} name="xr-build-properties-scroll" width={0.96}
-                  height={0.6} contentHeight={details.rows.length * 0.12}
+                  height={0.6} contentHeight={detailRows.length * 0.12}
                   position={[0, hasChildren ? -0.49 : 0, 0]}>
-                  {details.rows.map((row, index) => (
+                  {detailRows.map((row, index) => (
                     <group key={row.id} position={[0, 0.24 - index * 0.12, 0]}>
                       <SettingRow row={row} />
                     </group>
                   ))}
                 </SpatialScroll>
-                {details.rows.length > 5 && <SpatialText color={XR_WAND_THEME.muted} fontSize={0.018}
+                {detailRows.length > 5 && <SpatialText color={XR_WAND_THEME.muted} fontSize={0.018}
                   position={[0, hasChildren ? -0.86 : -0.36, 0.012]}>Drag to see more controls</SpatialText>}
                 {details.pageCount > 1 && (
                   <group position={[0, hasChildren ? -0.48 : 0, 0]}>

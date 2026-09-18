@@ -4,8 +4,9 @@ export type XRWandIconModel = {
 }
 
 export type XRWandBuildItem = {
+  section?: string
   active?: boolean
-  icon: XRWandIconModel
+  icon?: XRWandIconModel
   id: string
   label: string
   onSelect: () => void
@@ -25,6 +26,12 @@ export type XRWandBuildModel = {
   title: string
 }
 
+export type XRWandItemsModel = {
+  categories: XRWandBuildItem[]
+  categoryId: string
+  items: XRWandBuildItem[]
+}
+
 export type XRWandPaintItem = {
   icon: XRWandIconModel
   id: string
@@ -34,6 +41,7 @@ export type XRWandPaintItem = {
 }
 
 export type XRWandPaintModel = {
+  actions?: XRWandAction[]
   activeMaterialLabel: string
   canPaint: boolean
   stopPainting: () => void
@@ -64,16 +72,18 @@ export type XRWandPaintModel = {
 }
 
 export type XRWandAction = {
+  icon?: XRWandIconModel
   disabled?: boolean
   id: string
   label: string
   onSelect?: () => void
 }
 
-export type XRWandSettingRow = { section?: string } & (
+export type XRWandSettingRow = { section?: string; mixed?: boolean } & (
   | {
       id: string
       kind: 'action'
+      icon?: XRWandIconModel
       label: string
       onSelect?: () => void
       disabled?: boolean
@@ -141,7 +151,8 @@ export type XRWandSettingsModel = {
 }
 
 export type XRWandAdapter = {
-  useBuildModel: () => XRWandBuildModel
+  useBuildModel: (options?: { separateItems?: boolean }) => XRWandBuildModel
+  useItemsModel?: () => XRWandItemsModel
   usePaintModel: () => XRWandPaintModel
   useSettingsModel: (options?: XRWandSettingsOptions) => XRWandSettingsModel
 }

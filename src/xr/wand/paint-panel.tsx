@@ -200,14 +200,13 @@ export function XRWandPaintPanel({ adapter }: { adapter: XRWandAdapter }) {
           {model.scope.disabled ? '' : '  ›'}
         </SpatialText>
       </SpatialButton>
-      <SpatialText
-        color={theme.muted}
-        fontSize={0.017}
-        maxWidth={1.24}
-        position={[0, -0.479, 0.014]}
-      >
-        Hold trigger or pinch and drag to browse · Click a surface to apply
-      </SpatialText>
+      {model.actions?.map((action, index) => (
+        <SpatialButton key={action.id} name={`xr-paint-${action.id}`} onClick={action.onSelect}
+          disabled={action.disabled} position={[(index - ((model.actions?.length ?? 1) - 1) / 2) * 0.63, -0.479, 0]}
+          size={[0.59, 0.05]}>
+          <SpatialText color={theme.text} fontSize={0.021} position={[0, 0, 0.014]}>{action.label}</SpatialText>
+        </SpatialButton>
+      ))}
     </group>
   )
 }

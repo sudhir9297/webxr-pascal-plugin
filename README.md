@@ -49,6 +49,15 @@ mode. The workspace stays independent of God-mode model scaling and does not
 follow the user. Direct touch/poke interaction is not enabled; use rays and
 trigger/pinch selection.
 
+With hand tracking or controllers, turn the **inside of your left wrist toward yourself** to
+reveal the watch. Aim the right-hand ray and pinch (or use the right controller's
+ray and trigger) to switch between Walkthrough and God Mode. Controller placement
+approximates the wrist with a grip-local offset; hand tracking uses wrist joints.
+The band follows the wrist; the controls hide when
+turned away or tracking is lost. The watch remains available with the workspace
+hidden, and also provides **Show/Hide panel** and **Bring here**. It uses the
+existing mode transition; floor-aware entry and transition fades are separate work.
+
 ### Local checks
 
 For browser-driven emulator checks, open the local editor with `?xrTest=1`

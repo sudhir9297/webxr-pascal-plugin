@@ -36,6 +36,7 @@ export type {
   XRWandBuildItem,
   XRWandBuildModel,
   XRWandIconModel,
+  XRWandItemsModel,
   XRWandPaintItem,
   XRWandPaintModel,
   XRWandSettingRow,

@@ -7,6 +7,7 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,6 +17,7 @@ import type { Node } from 'three/webgpu'
 import { positionWorld, uniform } from 'three/tsl'
 import { useWebXRSceneLayers } from '../layers'
 import { clampScroll, ScrollDrag } from './scroll-drag'
+import { visibleRows, type VisibleRows } from './visible-rows'
 import { XR_WAND_THEME } from './theme'
 
 type PointerEvent3D = ThreeEvent<PointerEvent>
@@ -35,25 +37,34 @@ export function SpatialScroll({
   width,
   height,
   contentHeight,
+  virtualRows,
   position,
 }: {
-  children: ReactNode
+  children: ReactNode | ((rows: VisibleRows) => ReactNode)
   name: string
   width: number
   height: number
   contentHeight: number
+  virtualRows?: { count: number; height: number }
   position: [number, number, number]
 }) {
   const root = useRef<Group>(null)
   const capture = useRef<Mesh>(null)
+  const content = useRef<Group>(null)
+  const thumb = useRef<Mesh>(null)
   const { overlay } = useWebXRSceneLayers()
   const session = useXR((state) => state.session)
   const drag = useRef(new ScrollDrag())
   const activation = useRef<{ action?: () => void; name?: string }>({})
   const offsetRef = useRef(0)
-  const [offset, setOffset] = useState(0)
+  const getRows = (offset: number) => virtualRows
+    ? visibleRows(offset, height, virtualRows.height, virtualRows.count)
+    : { start: 0, end: 0 }
+  const [rows, setRows] = useState(() => getRows(0))
+  const rowsRef = useRef(rows)
   const limit = Math.max(0, contentHeight - height)
-  const current = clampScroll(offset, contentHeight, height)
+  const thumbHeight = Math.min(height, Math.max(0.055, height * Math.min(1, height / (contentHeight || height))))
+  const travel = height - thumbHeight
   const planes = useMemo(() => Array.from({ length: 4 }, () => new Plane()), [])
   const clipping = useMemo(() => {
     const values = Array.from({ length: 4 }, () => new Vector4())
@@ -68,9 +79,19 @@ export function SpatialScroll({
 
   const updateOffset = (next: number) => {
     offsetRef.current = clampScroll(next, contentHeight, height)
-    setOffset(offsetRef.current)
+    if (content.current) content.current.position.y = offsetRef.current
+    if (thumb.current) thumb.current.position.y = limit > 0 ? travel / 2 - (offsetRef.current / limit) * travel : 0
+    const nextRows = getRows(offsetRef.current)
+    if (nextRows.start !== rowsRef.current.start || nextRows.end !== rowsRef.current.end) {
+      rowsRef.current = nextRows
+      setRows(nextRows)
+    }
     if (root.current) root.current.userData.scrollOffset = offsetRef.current
   }
+  useLayoutEffect(() => {
+    updateOffset(offsetRef.current)
+  }, [contentHeight, height, virtualRows?.count, virtualRows?.height])
+
   const localY = (event: PointerEvent3D) =>
     root.current!.worldToLocal(localPoint.copy(event.point)).y
   const cancel = () => {
@@ -113,7 +134,7 @@ export function SpatialScroll({
     maskNode: clipping.mask,
     begin: (event, activate, targetName, scale = 1) => {
       event.stopPropagation()
-      if (!root.current || !drag.current.begin(event.pointerId, localY(event), current, scale))
+      if (!root.current || !drag.current.begin(event.pointerId, localY(event), offsetRef.current, scale))
         return false
       activation.current = { action: activate, name: targetName }
       capture.current?.setPointerCapture?.(event.pointerId)
@@ -151,8 +172,6 @@ export function SpatialScroll({
       pending.action?.()
     }
   }
-  const thumbHeight = Math.max(0.055, height * Math.min(1, height / contentHeight))
-  const travel = height - thumbHeight
 
   return (
     <group ref={root} position={position} name={name}>
@@ -174,7 +193,7 @@ export function SpatialScroll({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <ScrollContext.Provider value={input}>
-        <group position={[0, current, 0]}>{children}</group>
+        <group ref={content}>{typeof children === 'function' ? children(rows) : children}</group>
       </ScrollContext.Provider>
       {limit > 0 && (
         <group position={[width / 2 + 0.025, 0, 0.018]}>
@@ -203,8 +222,9 @@ export function SpatialScroll({
           </mesh>
           <mesh
             layers={overlay}
+            ref={thumb}
             name={`${name}-thumb`}
-            position={[0, travel / 2 - (current / limit) * travel, 0.002]}
+            position={[0, travel / 2 - (offsetRef.current / limit) * travel, 0.002]}
             onPointerDown={(event) => input.begin(event, undefined, undefined, -limit / travel)}
           >
             <planeGeometry args={[0.028, thumbHeight]} />
