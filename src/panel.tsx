@@ -18,8 +18,9 @@ export default function WebXRPanel() {
   const setStartingMode = useWebXRSessionControls(state => state.setStartingMode)
   const active = controls?.active ?? false
   const entering = controls?.entering ?? false
-  const disabled = !controls || entering || (!active && !controls.ready)
-  const status = active ? 'VR session active' : entering ? 'Starting VR…' : controls?.error ? 'VR unavailable' : controls?.ready ? 'Ready to enter VR' : 'Preparing VR…'
+  const unavailable = controls?.unavailable ?? false
+  const disabled = !controls || entering || (!active && (unavailable || !controls.ready))
+  const status = active ? 'VR session active' : entering ? 'Starting VR…' : unavailable ? 'Immersive VR is not supported on this device' : controls?.error ? 'Could not start VR' : controls?.ready ? 'Ready to enter VR' : 'Preparing VR…'
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto p-4 text-sidebar-foreground">
@@ -30,11 +31,12 @@ export default function WebXRPanel() {
           type="button"
           disabled={disabled}
           aria-pressed={active}
-          onClick={() => { if (controls) void (active ? controls.exit() : controls.enter()) }}
+          title={unavailable && !active ? 'Connect a compatible headset and use a WebXR-enabled browser over HTTPS.' : undefined}
+          onClick={() => { if (controls && !disabled) void (active ? controls.exit() : controls.enter()) }}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RectangleGoggles aria-hidden="true" className="h-4 w-4" />
-          {active ? 'Exit VR' : entering ? 'Entering VR…' : 'Enter VR'}
+          {active ? 'Exit VR' : entering ? 'Entering VR…' : unavailable ? 'VR unavailable' : 'Enter VR'}
         </button>
         {controls?.error && <p role="alert" className="text-xs text-destructive">{controls.error}</p>}
       </div>

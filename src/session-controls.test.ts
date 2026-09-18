@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { useWebXRSessionControls, type WebXRSessionControls } from './session-controls'
 
 const controls: WebXRSessionControls = {
-  ready: true, active: false, entering: false, error: null,
+  ready: true, unavailable: false, active: false, entering: false, error: null,
   enter: async () => {}, exit: async () => {},
 }
 

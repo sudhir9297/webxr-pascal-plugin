@@ -155,6 +155,7 @@ export function useWebXRSession(qualityPreset: XRQualityPreset = 'balanced') {
   )
 
   const ready = runtime.status === 'ready'
+  const unavailable = runtime.status === 'unsupported'
   const sessionError = error ?? (runtime.status === 'error'
     ? runtime.message
     : runtime.status === 'unsupported'
@@ -163,9 +164,9 @@ export function useWebXRSession(qualityPreset: XRQualityPreset = 'balanced') {
   const controlsOwner = useRef({})
   useEffect(() => {
     useWebXRSessionControls.getState().publish(controlsOwner.current, {
-      ready, active: !!session, entering, error: sessionError, enter, exit,
+      ready, unavailable, active: !!session, entering, error: sessionError, enter, exit,
     })
-  }, [ready, session, entering, sessionError, enter, exit])
+  }, [ready, unavailable, session, entering, sessionError, enter, exit])
   useEffect(() => {
     const owner = controlsOwner.current
     return () => useWebXRSessionControls.getState().clear(owner)

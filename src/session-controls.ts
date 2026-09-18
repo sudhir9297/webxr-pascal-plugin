@@ -3,6 +3,7 @@ import type { XRPlayerMode } from './xr/mode-switching/store/player-mode'
 
 export type WebXRSessionControls = {
   ready: boolean
+  unavailable: boolean
   active: boolean
   entering: boolean
   error: string | null
