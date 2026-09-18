@@ -118,6 +118,13 @@ export type XRWandSettingRow = { section?: string; mixed?: boolean } & (
     }
   | {
       id: string
+      kind: 'text'
+      label: string
+      value: string
+      onChange: (value: string) => void
+    }
+  | {
+      id: string
       kind: 'stepper'
       label: string
       max: number

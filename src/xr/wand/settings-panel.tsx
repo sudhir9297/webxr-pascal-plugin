@@ -60,6 +60,7 @@ function SubscribedChoice({
 }
 
 export function SettingRow({ row }: { row: XRWandSettingRow }) {
+  if (row.kind === 'text') return <SettingChoice label={row.label} name={`xr-setting-${row.id}`} value={row.value} />
   if (row.kind === 'stepper') {
     return (
       <SettingStepper
@@ -115,7 +116,8 @@ export function SettingRow({ row }: { row: XRWandSettingRow }) {
   return <ActionButton action={row} />
 }
 
-function WideSettingRow({ row }: { row: XRWandSettingRow }) {
+function WideSettingRow({ row, onEdit }: { row: XRWandSettingRow; onEdit?: (row: Extract<XRWandSettingRow, { kind: 'text' }>) => void }) {
+  if (row.kind === 'text') return <ActionButton action={{ id: row.id, label: `${row.label}: ${row.value}`, onSelect: () => onEdit?.(row) }} width={1.12} />
   if (row.kind === 'action') return <ActionButton action={row} width={1.12} />
   if (row.kind === 'actions') return <SettingRow row={row} />
   if (row.kind === 'subscribed-choice') return <WideSubscribedChoice row={row} />
@@ -217,6 +219,8 @@ function WideSubscribedChoice({
 }
 
 export function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
+  const [editing, setEditing] = useState<{ row: Extract<XRWandSettingRow, { kind: 'text' }>; value: string } | null>(null)
+  const [uppercase, setUppercase] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const sections = new Map<string, XRWandSettingRow[]>()
   for (const row of model.rows) {
@@ -225,48 +229,36 @@ export function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
     rows.push(row)
     sections.set(name, rows)
   }
-  let cursor = 0
-  const content = [...sections].map(([name, rows]) => {
-    const top = cursor
-    const closed = collapsed.has(name)
-    cursor += 0.09 + (closed ? 0 : rows.length * 0.13) + 0.025
-    return (
-      <group key={name} position={[0, -top, 0]}>
+  const entries: ({ kind: 'header'; name: string } | { kind: 'row'; row: XRWandSettingRow })[] = []
+  for (const [name, rows] of sections) {
+    entries.push({ kind: 'header', name })
+    if (!collapsed.has(name)) entries.push(...rows.map(row => ({ kind: 'row' as const, row })))
+  }
+  const cursor = entries.length * 0.13
+  const renderEntry = (entry: (typeof entries)[number], index: number) => (
+    <group key={entry.kind === 'header' ? `section-${entry.name}` : entry.row.id} position={[0, -index * 0.13 - 0.065, 0]}>
+      {entry.kind === 'row' ? <WideSettingRow row={entry.row} onEdit={row => setEditing({ row, value: row.value })} /> : (
         <SpatialButton
-          name={`xr-settings-section-${name}`}
-          position={[0, -0.045, 0]}
+          name={`xr-settings-section-${entry.name}`}
+          position={[0, 0, 0]}
           size={[1.18, 0.072]}
-          onClick={() =>
-            setCollapsed((current) => {
-              const next = new Set(current)
-              if (next.has(name)) next.delete(name)
-              else next.add(name)
-              return next
-            })
-          }
+          onClick={() => setCollapsed(current => {
+            const next = new Set(current)
+            if (next.has(entry.name)) next.delete(entry.name)
+            else next.add(entry.name)
+            return next
+          })}
         >
-          <SpatialText
-            anchorX="left"
-            color={XR_WAND_THEME.accentLine}
-            fontSize={0.025}
-            maxWidth={0.97}
-            position={[-0.55, 0, 0.014]}
-          >
-            {name}
+          <SpatialText anchorX="left" color={XR_WAND_THEME.accentLine} fontSize={0.025} maxWidth={0.97} position={[-0.55, 0, 0.014]}>
+            {entry.name}
           </SpatialText>
           <SpatialText color={XR_WAND_THEME.muted} fontSize={0.024} position={[0.51, 0, 0.014]}>
-            {closed ? '+' : '−'}
+            {collapsed.has(entry.name) ? '+' : '−'}
           </SpatialText>
         </SpatialButton>
-        {!closed &&
-          rows.map((row, index) => (
-            <group key={row.id} position={[0, -0.155 - index * 0.13, 0]}>
-              <WideSettingRow row={row} />
-            </group>
-          ))}
-      </group>
-    )
-  })
+      )}
+    </group>
+  )
   const actions = model.onClearSelection
     ? [
         {
@@ -286,15 +278,36 @@ export function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
           </group>
         ))}
       </group>
-      <SpatialScroll
+      {editing ? (
+        <group name="xr-settings-keyboard">
+          <SpatialText color={XR_WAND_THEME.text} fontSize={0.035} maxWidth={1.1} position={[0, 0.2, 0.014]}>{editing.value || 'Enter a name'}</SpatialText>
+          {[...(uppercase ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' : 'abcdefghijklmnopqrstuvwxyz'), ...'0123456789-'].map((key, index) => (
+            <SpatialButton key={key} name={`xr-key-${key}`} position={[(index % 10 - 4.5) * 0.115, 0.08 - Math.floor(index / 10) * 0.09, 0]} size={[0.105, 0.08]} onClick={() => setEditing(current => current && ({ ...current, value: (current.value + key).slice(0, 48) }))}>
+              <SpatialText color={XR_WAND_THEME.text} fontSize={0.03} position={[0, 0, 0.014]}>{key}</SpatialText>
+            </SpatialButton>
+          ))}
+          {[
+            { label: 'Shift', run: () => setUppercase(value => !value) },
+            { label: 'Space', run: () => setEditing(current => current && ({ ...current, value: (current.value + ' ').slice(0, 48) })) },
+            { label: 'Erase', run: () => setEditing(current => current && ({ ...current, value: current.value.slice(0, -1) })) },
+            { label: 'Cancel', run: () => setEditing(null) },
+            { label: 'Save', run: () => { if (editing.value.trim()) { editing.row.onChange(editing.value.trim()); setEditing(null) } } },
+          ].map((key, index) => (
+            <SpatialButton key={key.label} name={`xr-key-${key.label}`} position={[(index - 2) * 0.23, -0.31, 0]} size={[0.21, 0.08]} onClick={key.run}>
+              <SpatialText color={XR_WAND_THEME.text} fontSize={0.025} position={[0, 0, 0.014]}>{key.label}</SpatialText>
+            </SpatialButton>
+          ))}
+        </group>
+      ) : <SpatialScroll
         name="xr-settings-properties-scroll"
         width={1.25}
         height={0.67}
         contentHeight={cursor}
+        virtualRows={{ count: entries.length, height: 0.13 }}
         position={[-0.014, -0.075, 0]}
       >
-        <group position={[0, 0.335, 0]}>{content}</group>
-      </SpatialScroll>
+        {({ start, end }) => <group position={[0, 0.335, 0]}>{entries.slice(start, end).map((entry, index) => renderEntry(entry, start + index))}</group>}
+      </SpatialScroll>}
       {!model.rows.length && (
         <PanelHint position={[0, 0, 0.014]}>
           {model.emptyMessage ?? 'No properties available'}

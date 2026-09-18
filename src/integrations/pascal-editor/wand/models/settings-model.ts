@@ -67,6 +67,8 @@ import {
 import type { PascalXRWandBindings } from '../bindings'
 import { usePascalXRWandTerrainModel } from './terrain-model'
 
+import { nestedSettingsRows } from './nested-settings'
+import { linkedSettingsRows } from './linked-settings'
 import { resolveSettingsHierarchy } from './settings-hierarchy'
 import type { XRWandSettingsOptions } from '../../../../xr/wand/adapter'
 
@@ -319,6 +321,13 @@ export function usePascalXRWandSettingsModel(
     if (context.definition.capabilities.deletable === false) return
     emitDeleteSFX(selectedNode.type)
     setSelection({ selectedIds: [] })
+    if (selectedNode.type === 'downspout') {
+      const gutter = useScene.getState().nodes[selectedNode.gutterId as AnyNodeId]
+      if (gutter?.type === 'gutter') {
+        useScene.getState().applyNodeChanges({ update: [{ id: gutter.id, data: { outlets: gutter.outlets.filter(outlet => outlet.id !== selectedNode.outletId) } }], delete: [selectedNode.id] })
+        return
+      }
+    }
     deleteNode(selectedId as AnyNodeId)
   }
   const update = (row: XRSettingFieldRow, value: unknown) => {
@@ -348,11 +357,43 @@ export function usePascalXRWandSettingsModel(
       .filter((child) => !existing.has(child.id))
       .map((child) => ({
         id: child.id, kind: 'action',
-        section: child.type === 'roof-segment' ? 'Segments' : 'Hosted items',
+        section: child.type === 'roof-segment' || child.type === 'stair-segment' ? 'Segments' : child.type === 'downspout' ? 'Downspouts' : child.type === 'window' && context.node.type === 'dormer' ? 'Windows' : 'Hosted items',
         label: labelFor(child),
         onSelect: () => selectNode(child.id),
       }))
-    return [...navigation, ...children, ...rows]
+    const api = {
+      read: () => useScene.getState().nodes[context.node.id],
+      update: (patch: Record<string, unknown>) => {
+        const current = useScene.getState().nodes[context.node.id]
+        if (!current) return
+        commitParametricNodeFields(context.node.id, patch)
+        if (current.type === 'cabinet-module' && 'stack' in patch) {
+          let parent = current.parentId ? useScene.getState().nodes[current.parentId as AnyNodeId] : undefined
+          const visited = new Set<string>()
+          while (parent && !visited.has(parent.id)) {
+            visited.add(parent.id)
+            if (parent.type === 'cabinet') {
+              const metadata = parent.metadata && typeof parent.metadata === 'object' && !Array.isArray(parent.metadata) ? parent.metadata : {}
+              const revision = typeof metadata.cabinetLayoutRevision === 'number' ? metadata.cabinetLayoutRevision : 0
+              useScene.getState().updateNode(parent.id, { metadata: { ...metadata, cabinetLayoutRevision: revision + 1 } })
+              break
+            }
+            parent = parent.parentId ? useScene.getState().nodes[parent.parentId as AnyNodeId] : undefined
+          }
+        }
+      },
+      select: selectNode,
+      create: (type: string, values: Record<string, unknown>, parentId: string) => {
+        const definition = nodeRegistry.get(type)
+        if (!definition || !useScene.getState().nodes[parentId as AnyNodeId]) return
+        const child = definition.schema.parse({ ...definition.defaults(), ...values, type }) as AnyNode
+        useScene.getState().createNode(child, parentId as AnyNodeId)
+        selectNode(child.id)
+      },
+      remove: (id: string) => useScene.getState().deleteNode(id as AnyNodeId),
+      nodes, materials,
+    }
+    return [...navigation, ...children, ...nestedSettingsRows(context.node, api), ...linkedSettingsRows(context.node, api), ...rows]
   }
 
   if (options?.scope !== 'workspace' && multiIds.length > 1) {
@@ -417,7 +458,7 @@ export function usePascalXRWandSettingsModel(
 
   if (options?.scope !== 'workspace' && context) {
     const sourceRows = [
-      ...collectXRSettingRows(context, visibleToolHints),
+      ...collectXRSettingRows(context, visibleToolHints).filter(row => !(context.node.type === 'downspout' && row.kind === 'field' && row.field.kind === 'custom')),
     ]
     const key = context.key
     const page = paginationKey === key ? paginationPage : 0

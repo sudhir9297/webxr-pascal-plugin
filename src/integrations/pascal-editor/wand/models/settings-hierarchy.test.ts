@@ -28,3 +28,14 @@ test('does not offer navigation into level containers or deleted hosts', () => {
   assert.equal(resolveSettingsHierarchy(table, nodes).parent, undefined)
   assert.equal(resolveSettingsHierarchy({ ...vase, parentId: 'deleted' }, nodes).parent, undefined)
 })
+
+test('gutter and dormer relationships take precedence over structural parents', () => {
+  const gutter = { id: 'gutter', type: 'gutter', roofSegmentId: 'segment' }
+  const downspout = { id: 'pipe', type: 'downspout', gutterId: 'gutter', parentId: 'segment' }
+  const dormer = { id: 'dormer', type: 'dormer', roofSegmentId: 'segment' }
+  const window = { id: 'window', type: 'window', dormerId: 'dormer', parentId: 'level' }
+  const all = { ...nodes, gutter, pipe: downspout, dormer, window }
+  assert.equal(resolveSettingsHierarchy(downspout, all).parent?.id, 'gutter')
+  assert.deepEqual(resolveSettingsHierarchy(gutter, all).children.map(node => node.id), ['pipe'])
+  assert.deepEqual(resolveSettingsHierarchy(dormer, all).children.map(node => node.id), ['window'])
+})
