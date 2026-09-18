@@ -16,6 +16,7 @@ import { PlayerModeScene } from './xr/mode-switching'
 import type { StandingSceneProvider } from './xr/mode-switching/lib/standing-destination'
 import { WebXRSessionRoot } from './xr/session-root'
 import type { XRQualityPreset } from './xr/frame-loop'
+import { useWebXRSessionControls } from './session-controls'
 
 type WrapperProps = { children: ReactNode }
 
@@ -153,21 +154,22 @@ export function useWebXRSession(qualityPreset: XRQualityPreset = 'balanced') {
     [fail, qualityPreset, runtime, session],
   )
 
-  return {
-    enter,
-    exit,
-    entering,
-    fail,
-    immersive,
-    runtime,
-    session,
-    ready: runtime.status === 'ready',
-    error:
-      error ??
-      (runtime.status === 'error'
-        ? runtime.message
-        : runtime.status === 'unsupported'
-          ? 'Immersive VR is unavailable. Connect a headset and open the editor over HTTPS.'
-          : null),
-  }
+  const ready = runtime.status === 'ready'
+  const sessionError = error ?? (runtime.status === 'error'
+    ? runtime.message
+    : runtime.status === 'unsupported'
+      ? 'Immersive VR is unavailable. Connect a headset and open the editor over HTTPS.'
+      : null)
+  const controlsOwner = useRef({})
+  useEffect(() => {
+    useWebXRSessionControls.getState().publish(controlsOwner.current, {
+      ready, active: !!session, entering, error: sessionError, enter, exit,
+    })
+  }, [ready, session, entering, sessionError, enter, exit])
+  useEffect(() => {
+    const owner = controlsOwner.current
+    return () => useWebXRSessionControls.getState().clear(owner)
+  }, [])
+
+  return { enter, exit, entering, fail, immersive, runtime, session, ready, error: sessionError }
 }

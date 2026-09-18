@@ -39,6 +39,7 @@ import {
   areThumbTipsTouching,
   type ThumbModeGestureState,
 } from '../lib/thumb-mode-gesture'
+import { useWebXRSessionControls } from '../../../session-controls'
 import { useXRPlayerMode, XR_PLAYER_MODES } from '../store/player-mode'
 
 function PlayerModeDefaultHand() {
@@ -209,6 +210,9 @@ export function PlayerModeScene({
 
   useEffect(() => {
     useXRPlayerMode.getState().reset()
+    if (useWebXRSessionControls.getState().startingMode === 'human') {
+      useXRPlayerMode.getState().setMode('human')
+    }
     store.setHand(HandInput)
     store.setController(ControllerInput)
     return () => {
