@@ -2,7 +2,7 @@
 
 import { useEditor } from '@pascal-app/editor'
 import { BATCHED_LAYER, OVERLAY_LAYER, useViewer, ZONE_LAYER } from '@pascal-app/viewer'
-import { Glasses, Orbit, PersonStanding, RotateCcw } from 'lucide-react'
+import { RectangleGoggles, Orbit, PersonStanding, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { createWebXRViewerSession, useWebXRSession } from '../../session'
 import { requestGodScaleReset } from '../../xr/god-mode'
@@ -13,6 +13,7 @@ import { XREmulatorTestHarnessBridge } from './testing/emulator-test-harness'
 import type { PascalXRWandBindings } from './wand/bindings'
 import type { XRQualityPreset } from '../../xr/frame-loop'
 import { createPascalXRWandAdapter } from './wand/create-adapter'
+import { collectPascalStandingScene } from './standing-scene'
 
 export function usePascalWebXR(
   bindings: PascalXRWandBindings,
@@ -67,6 +68,7 @@ export function usePascalWebXR(
       fail,
       <XRFloatingWorkspace adapter={adapter} />,
       qualityPreset,
+      collectPascalStandingScene,
     )
   }, [bindings, fail, qualityPreset, runtime, session])
 
@@ -81,6 +83,11 @@ export function PascalWebXRButton({
   className?: string
 }) {
   const mode = useXRPlayerMode((state) => state.mode)
+  const entryRequested = useXRPlayerMode((state) => state.entryRequested)
+  const entryPlaced = useXRPlayerMode((state) => state.entryPlaced)
+  const inputLocked = useXRPlayerMode((state) => state.inputLocked)
+  const transitionPhase = useXRPlayerMode((state) => state.transitionPhase)
+  const entryMessage = useXRPlayerMode((state) => state.entryMessage)
   const active = !!feature.session
   const label = active ? 'Exit VR' : feature.entering ? 'Entering VR' : 'Enter VR'
   return (
@@ -94,12 +101,13 @@ export function PascalWebXRButton({
         title={feature.error ?? (feature.ready ? label : 'Preparing VR')}
         type="button"
       >
-        <Glasses className="h-4 w-4" />
+        <RectangleGoggles className="h-4 w-4" />
       </button>
       {active && (
         <>
           <button
-            aria-label={`Switch to ${mode === XR_PLAYER_MODES.GOD ? 'Human' : 'God'} mode`}
+            aria-label={entryRequested ? (entryPlaced ? 'Enter placed target' : 'Place target in VR first') : `Switch to ${mode === XR_PLAYER_MODES.GOD ? 'Human' : 'God'} mode`}
+            disabled={inputLocked || (entryRequested && !entryPlaced)}
             className={className}
             onClick={toggleXRPlayerMode}
             type="button"
@@ -110,9 +118,16 @@ export function PascalWebXRButton({
               <Orbit className="h-4 w-4" />
             )}
           </button>
+          {entryRequested && <>
+            <span role="status">{entryMessage ?? 'Choose a safe floor in VR'}</span>
+            <button disabled={inputLocked} className={className} onClick={() => useXRPlayerMode.getState().retargetEntry()} type="button">{entryPlaced ? 'Replace target' : 'Retarget entry'}</button>
+            <button disabled={inputLocked} className={className} onClick={() => useXRPlayerMode.getState().cancelEntry()} type="button">Cancel entry</button>
+          </>}
+          {inputLocked && <span role="status" data-xr-transition-phase={transitionPhase}>{transitionPhase === 'rearm' ? 'Release grips, pinches and buttons; center sticks to continue.' : `Switching mode (${transitionPhase})…`}</span>}
           {mode === XR_PLAYER_MODES.GOD && (
             <button
               aria-label="Reset God view"
+              disabled={inputLocked}
               className={className}
               onClick={requestGodScaleReset}
               type="button"

@@ -49,6 +49,10 @@ export function HumanCollisionRig({ sceneRootRef }: { sceneRootRef: RefObject<Ob
   }, [mode])
 
   useFrame(() => {
+    if (useXRPlayerMode.getState().inputLocked) {
+      hasViewerPose.current = false
+      return
+    }
     if (mode !== XR_PLAYER_MODES.HUMAN || !origin || !sceneRootRef.current) return
     if (!collected.current) {
       colliders.current = collectColliders(sceneRootRef.current)

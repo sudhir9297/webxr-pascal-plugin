@@ -11,9 +11,9 @@ import type { XRWandAdapter } from './adapter'
 import { XRWandItemsPanel } from './items-panel'
 import { XRWandBuildPanel } from './build-panel'
 import { XRWandPaintPanel } from './paint-panel'
-import { XR_WAND_PANEL_INPUT_NAME } from './panel-layout'
+import { sidePanelPose, XR_WAND_PANEL_INPUT_NAME } from './panel-layout'
 import { useXRWandPanelSettings } from './panel-settings'
-import { XRWandSettingsPanel } from './settings-panel'
+import { SettingsInspector, XRWandSettingsPanel } from './settings-panel'
 import { SpatialText } from './spatial-text'
 import { SpatialLine, shapeLinePoints } from './spatial-line'
 import { XR_WAND_THEME } from './theme'
@@ -25,6 +25,7 @@ import {
   placeWorkspace,
   selectionWorkspacePosition,
   workspaceParentPoint,
+  clampWorkspaceDragHeight,
   WORKSPACE_CONTENT_SCALE,
   WorkspaceDrag,
 } from './workspace-placement'
@@ -72,7 +73,7 @@ function RailButton({
       selected={selected}
       size={[0.115, 0.105]}
     >
-      <PanelIcon positionY={0} size={0.066} src={iconSrc} />
+      <PanelIcon muted={!selected} positionY={0} size={0.066} src={iconSrc} />
     </SpatialButton>
   )
 }
@@ -111,6 +112,8 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
   const target = useRef(new Vector3())
   const localPoint = useRef(new Vector3())
   const [tab, setTab] = useState<WorkspaceTab>('build')
+  const selectionSettings = adapter.useSettingsModel({ scope: 'selection', unpaged: true })
+  const hasSelection = selectionSettings.contextual === true && !!selectionSettings.onClearSelection
 
   const endDrag = useCallback(() => {
     const pointerId = drag.current.pointerId ?? resize.current.pointerId
@@ -123,6 +126,10 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
     dragSource.current = null
     if (root.current) root.current.userData.dragging = false
   }, [])
+
+  useEffect(() => useXRPlayerMode.subscribe((state) => {
+    if (state.inputLocked) endDrag()
+  }), [endDrag])
 
   useEffect(() => {
     endDrag()
@@ -189,7 +196,7 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
     viewerMatrix.current.fromArray(pose.transform.matrix).premultiply(origin.matrixWorld)
     eye.current.setFromMatrixPosition(viewerMatrix.current)
     direction.current.set(0, 0, -1).transformDirection(viewerMatrix.current)
-    if (!controller || session.visibilityState !== 'visible' ||
+    if (useXRPlayerMode.getState().inputLocked || !controller || session.visibilityState !== 'visible' ||
       (frame && referenceSpace && !frame.getPose(controller.inputSource.targetRaySpace, referenceSpace))) {
       recallButton.current.reset()
     } else {
@@ -230,7 +237,6 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
       workspaceParentPoint(workspace.current, target.current, target.current)
       layout.current.recall(target.current, initial || recallReason === 'manual')
       movingToSelection.current = selection
-      if (selection) setTab(current => current === 'settings' ? 'settings' : 'build')
       handledRecall.current = request
     }
     if (handledReset.current !== resetPositionRequest) {
@@ -249,6 +255,7 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
   const startDrag = (event: PointerDownEvent) => {
     event.stopPropagation()
+    if (useXRPlayerMode.getState().inputLocked) return
     if (resize.current.pointerId !== null) return
     if (!root.current || !viewerTracked.current || !useXRWorkspace.getState().visible) return
     if (
@@ -271,9 +278,11 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
   const moveDrag = (event: PointerDownEvent) => {
     event.stopPropagation()
+    if (useXRPlayerMode.getState().inputLocked) { endDrag(); return }
     if (!root.current || !viewerTracked.current || !useXRWorkspace.getState().visible) return
     workspaceParentPoint(root.current, event.point, localPoint.current)
     if (drag.current.move(event.pointerId, localPoint.current, target.current)) {
+      clampWorkspaceDragHeight(root.current, target.current, eye.current)
       layout.current.dragTo(target.current)
     }
   }
@@ -285,6 +294,7 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
   const startResize = (event: PointerDownEvent) => {
     event.stopPropagation()
+    if (useXRPlayerMode.getState().inputLocked) return
     const group = root.current
     if (!group || !viewerTracked.current || !useXRWorkspace.getState().visible || drag.current.pointerId !== null) return
     group.updateWorldMatrix(true, false)
@@ -303,6 +313,7 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
 
   const moveResize = (event: PointerDownEvent) => {
     event.stopPropagation()
+    if (useXRPlayerMode.getState().inputLocked) { endDrag(); return }
     if (!viewerTracked.current || !useXRWorkspace.getState().visible) return
     const scale = resize.current.move(event.pointerId, event.point)
     if (scale !== undefined) useXRWandPanelSettings.getState().setPanelScale(scale)
@@ -335,10 +346,19 @@ export function XRFloatingWorkspace({ adapter }: { adapter: XRWandAdapter }) {
               <group name="xr-workspace-content">
                 <PanelFace width={1.4} height={1.04} />
                 {tab === 'paint' && <XRWandPaintPanel adapter={adapter} />}
-                {tab === 'build' && <XRWandBuildPanel adapter={adapter} separateItems={!!adapter.useItemsModel} />}
+                {tab === 'build' && <XRWandBuildPanel adapter={adapter} separateItems={!!adapter.useItemsModel} hideDetails={hasSelection} />}
                 {tab === 'items' && adapter.useItemsModel && <XRWandItemsPanel useItemsModel={adapter.useItemsModel} />}
-                {tab === 'settings' && <XRWandSettingsPanel adapter={adapter} panelPlacement />}
+                {tab === 'settings' && <XRWandSettingsPanel adapter={adapter} panelPlacement workspaceOnly />}
               </group>
+              {hasSelection && (
+                <group name="xr-workspace-selection-settings" {...sidePanelPose(1.4)}>
+                  <PanelFace width={1.4} height={1.04} />
+                  <SettingsInspector
+                    key={selectionSettings.contextKey}
+                    model={selectionSettings}
+                  />
+                </group>
+              )}
               <group name="xr-workspace-tool-rail" position={[-0.8, 0, 0]}>
                 <PanelFace width={0.16} height={1.04} />
                 {TABS.filter((value) => value !== 'items' || adapter.useItemsModel).map((value, index) => (

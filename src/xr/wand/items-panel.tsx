@@ -23,7 +23,7 @@ export function XRWandItemsPanel({ useItemsModel }: { useItemsModel: () => XRWan
             selected={category.active}
             onClick={category.onSelect}
           >
-            <PanelIcon src={category.icon?.src} size={0.067} positionY={0.018} />
+            <PanelIcon muted={!category.active} src={category.icon?.src} size={0.067} positionY={0.018} />
             <SpatialText color={category.active ? XR_WAND_THEME.text : XR_WAND_THEME.muted}
               fontSize={0.022} maxWidth={0.21} position={[0, -0.042, 0.012]}>
               {category.label}

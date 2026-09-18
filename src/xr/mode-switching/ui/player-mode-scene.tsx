@@ -1,9 +1,8 @@
 'use client'
 
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import {
   CombinedPointer,
-  useXR,
   useXRInputSourceState,
   useXRInputSourceStateContext,
   XRSpace,
@@ -11,16 +10,14 @@ import {
 import {
   type ComponentType,
   type ReactNode,
-  type RefObject,
   useCallback,
   useEffect,
   useMemo,
   useRef,
 } from 'react'
-import { Euler, type Group, type Object3D, Vector3 } from 'three'
+import { type Group, type Object3D, Vector3 } from 'three'
 import { DistanceAwareRayPointer } from '../../distance-aware-ray-pointer'
 import { isQuestXPressed } from '../../controller-buttons'
-import { GOD_ORIGIN_POSITION, GOD_ORIGIN_ROTATION } from '../../god-mode'
 import { GodModeHandControls } from '../../god-mode/input/god-mode-hand-controls'
 import { GodModeControls } from '../../god-mode/ui/god-mode-controls'
 import { HumanModeHandControls } from '../../human-mode/input/hand-locomotion'
@@ -35,14 +32,8 @@ import {
   type WebXRSceneLayers,
   WebXRSceneLayersProvider,
 } from '../../layers'
-import {
-  captureGodSceneTransform,
-  resetSceneForHumanScale,
-  resolveHumanPointInScene,
-  resolveXRHumanOriginTarget,
-  restoreGodSceneTransform,
-  type SceneTransform,
-} from '../lib/scene-scale-transition'
+import type { StandingSceneProvider } from '../lib/standing-destination'
+import { PlayerModeRig } from './player-mode-rig'
 import {
   advanceThumbModeGesture,
   areThumbTipsTouching,
@@ -189,84 +180,23 @@ function PlayerModeControllerToggle() {
   return null
 }
 
-function PlayerModeRig({ sceneRootRef }: { sceneRootRef: RefObject<Group | null> }) {
-  const camera = useThree((state) => state.camera)
-  const origin = useXR((state) => state.origin)
-  const mode = useXRPlayerMode((state) => state.mode)
-  const previousMode = useRef(mode)
-  const transitionActive = useRef(false)
-  const godTransform = useRef<SceneTransform | null>(null)
-  const cameraWorldPosition = useRef(new Vector3())
-  const cameraDirection = useRef(new Vector3())
-  const cameraLocalPosition = useRef(new Vector3())
-  const humanPoint = useRef(new Vector3())
-  const targetPosition = useRef(new Vector3())
-  const targetRotation = useRef(new Euler())
-
-  useFrame((_, delta) => {
-    const root = sceneRootRef.current
-    if (!root || !origin) return
-
-    if (mode !== previousMode.current) {
-      if (mode === XR_PLAYER_MODES.HUMAN) {
-        godTransform.current = captureGodSceneTransform(root)
-        camera.getWorldPosition(cameraWorldPosition.current)
-        camera.getWorldDirection(cameraDirection.current)
-        resolveHumanPointInScene(
-          root,
-          cameraWorldPosition.current,
-          cameraDirection.current,
-          humanPoint.current,
-        )
-        cameraLocalPosition.current.copy(cameraWorldPosition.current)
-        origin.worldToLocal(cameraLocalPosition.current)
-        resolveXRHumanOriginTarget(
-          humanPoint.current,
-          cameraLocalPosition.current,
-          targetPosition.current,
-        )
-        resetSceneForHumanScale(root)
-        targetRotation.current.set(0, 0, 0)
-      } else {
-        restoreGodSceneTransform(root, godTransform.current)
-        targetPosition.current.copy(GOD_ORIGIN_POSITION)
-        targetRotation.current.copy(GOD_ORIGIN_ROTATION)
-      }
-      previousMode.current = mode
-      transitionActive.current = true
-    }
-
-    if (!transitionActive.current) return
-
-    const blend = 1 - Math.exp(-delta * 8)
-    origin.position.lerp(targetPosition.current, blend)
-    origin.rotation.x += (targetRotation.current.x - origin.rotation.x) * blend
-    origin.rotation.y += (targetRotation.current.y - origin.rotation.y) * blend
-    origin.rotation.z += (targetRotation.current.z - origin.rotation.z) * blend
-    if (origin.position.distanceTo(targetPosition.current) < 0.002) {
-      origin.position.copy(targetPosition.current)
-      origin.rotation.copy(targetRotation.current)
-      transitionActive.current = false
-    }
-  })
-
-  return null
-}
-
 export function PlayerModeScene({
   children,
   inputSourceOverlay,
   layers = DEFAULT_WEBXR_SCENE_LAYERS,
   store,
   uiContent,
+  standingScene,
 }: {
   children: ReactNode
   inputSourceOverlay?: InputSourceOverlay
   layers?: WebXRSceneLayers
   store: WebXRStore
   uiContent?: ReactNode
+  standingScene?: StandingSceneProvider
 }) {
   const sceneRootRef = useRef<Group | null>(null)
+  const entryRequested = useXRPlayerMode((state) => state.entryRequested)
   const HandInput = useMemo(
     () =>
       inputSourceOverlay ? createPlayerModeHandInput(inputSourceOverlay) : PlayerModeHandInput,
@@ -278,13 +208,13 @@ export function PlayerModeScene({
   )
 
   useEffect(() => {
-    useXRPlayerMode.getState().setMode(XR_PLAYER_MODES.GOD)
+    useXRPlayerMode.getState().reset()
     store.setHand(HandInput)
     store.setController(ControllerInput)
     return () => {
       store.setHand(VisibleXRHand)
       store.setController(VisibleXRController)
-      useXRPlayerMode.getState().setMode(XR_PLAYER_MODES.GOD)
+      useXRPlayerMode.getState().reset()
     }
   }, [ControllerInput, HandInput, store])
 
@@ -292,11 +222,11 @@ export function PlayerModeScene({
     <WebXRSceneLayersProvider layers={layers}>
       <PlayerModeControllerToggle />
       <PlayerModeHandToggle disabled={inputSourceOverlay != null || uiContent != null} />
-      <PlayerModeRig sceneRootRef={sceneRootRef} />
       <GodModeControls sceneRootRef={sceneRootRef} />
       <HumanModeControls sceneRootRef={sceneRootRef} />
+      <PlayerModeRig sceneRootRef={sceneRootRef} standingScene={standingScene} />
       {uiContent}
-      <group name="xr-player-scene-root" ref={sceneRootRef}>
+      <group name="xr-player-scene-root" ref={sceneRootRef} pointerEvents={entryRequested ? 'none' : 'auto'}>
         {children}
       </group>
     </WebXRSceneLayersProvider>

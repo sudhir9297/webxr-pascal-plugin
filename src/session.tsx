@@ -13,6 +13,7 @@ import type { WebXRStore } from './runtime'
 import { GOD_ORIGIN_POSITION, GOD_ORIGIN_ROTATION } from './xr/god-mode'
 import type { WebXRSceneLayers } from './xr/layers'
 import { PlayerModeScene } from './xr/mode-switching'
+import type { StandingSceneProvider } from './xr/mode-switching/lib/standing-destination'
 import { WebXRSessionRoot } from './xr/session-root'
 import type { XRQualityPreset } from './xr/frame-loop'
 
@@ -27,6 +28,7 @@ export function createWebXRViewerSession(
   onError?: (cause: unknown) => void,
   uiContent?: ReactNode,
   qualityPreset: XRQualityPreset = 'balanced',
+  standingScene?: StandingSceneProvider,
 ) {
   return {
     onError,
@@ -51,6 +53,7 @@ export function createWebXRViewerSession(
           layers={layers}
           store={store}
           uiContent={uiContent}
+          standingScene={standingScene}
         >
           {children}
           {sceneContent}

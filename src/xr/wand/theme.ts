@@ -12,3 +12,7 @@ export const XR_WAND_THEME = {
   destructiveText: '#f87171',
   text: '#fafafa',
 } as const
+
+// Editor selection overlays occupy orders 1000–1009 and may disable depth testing.
+// Panel surfaces and their contents share the transparent pass so this order wins.
+export const XR_PANEL_RENDER_ORDER = 2000

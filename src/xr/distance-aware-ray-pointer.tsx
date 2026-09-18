@@ -15,9 +15,12 @@ import {
   POINTER_CURSOR_INNER_RADIUS,
   POINTER_CURSOR_OUTER_RADIUS,
   resolvePointerCursorSize,
+  resolvePointerRayLength,
 } from './pointer-cursor'
+import { XR_PANEL_RENDER_ORDER } from './wand/theme'
 import { PointerRingMaterial } from './pointer-ring-material'
 import { isSpatialUIObject, spatialUIInputOwnership } from './spatial-ui'
+import { useXRPlayerMode } from './mode-switching/store/player-mode'
 
 const NEAR_RAY_HIDE_DISTANCE = 0.2
 // Pascal's ordinary scene geometry (including the wall collision meshes) uses
@@ -58,6 +61,13 @@ export function DistanceAwareRayPointer({
     typeof options.cursorModel === 'object' ? options.cursorModel : undefined
 
   usePointerXRInputSourceEvents(pointer, state.inputSource, 'select', state.events)
+  useEffect(() => useXRPlayerMode.subscribe((next, previous) => {
+    if (next.inputLocked && !previous.inputLocked) {
+      pointer.cancel(new PointerEvent('pointercancel'))
+      pointer.setCapture(undefined)
+      spatialUIInputOwnership.remove(state.inputSource)
+    }
+  }), [pointer, state.inputSource])
   useEffect(() => {
     const session = renderer.xr.getSession()
     const source = state.inputSource
@@ -106,25 +116,29 @@ export function DistanceAwareRayPointer({
     } else {
       spatialUIInputOwnership.remove(state.inputSource)
     }
-    const distance = intersection?.distance
-    if (
-      !tracked ||
-      !intersection ||
-      distance == null ||
-      !pointer.getEnabled() ||
-      (intersection.object as Object3D & { isVoidObject?: boolean }).isVoidObject === true
-    ) {
+    if (!tracked || !pointer.getEnabled()) {
       if (rayModel.current) rayModel.current.visible = false
       if (cursorModel.current) cursorModel.current.visible = false
       return
     }
 
+    const distance = intersection?.distance
+    const hasSurfaceHit = intersection != null && distance != null && Number.isFinite(distance) &&
+      (intersection.object as Object3D & { isVoidObject?: boolean }).isVoidObject !== true
+
     if (rayModel.current) {
-      rayModel.current.visible = distance >= NEAR_RAY_HIDE_DISTANCE
-      const rayLength = Math.min(rayModelOptions?.maxLength ?? distance, distance)
+      // Controllers keep their aiming guide during placement, including near previews.
+      // Hands retain the near-surface suppression used for direct interaction.
+      rayModel.current.visible = !state.inputSource.hand || !hasSurfaceHit || distance! >= NEAR_RAY_HIDE_DISTANCE
+      const rayLength = resolvePointerRayLength(hasSurfaceHit ? distance : undefined, rayModelOptions?.maxLength)
       rayModel.current.position.z = -rayLength / 2
       const raySize = rayModelOptions?.size ?? 0.005
       rayModel.current.scale.set(raySize, raySize, rayLength)
+    }
+
+    if (!hasSurfaceHit || !intersection || distance == null) {
+      if (cursorModel.current) cursorModel.current.visible = false
+      return
     }
 
     if (!cursorModel.current) return
@@ -172,7 +186,7 @@ export function DistanceAwareRayPointer({
           position-z={-0.5}
           raycast={ignoreRaycast}
           ref={rayModel}
-          renderOrder={1001}
+          renderOrder={XR_PANEL_RENDER_ORDER + 1001}
         >
           <boxGeometry />
           <meshBasicMaterial
@@ -191,7 +205,7 @@ export function DistanceAwareRayPointer({
           name="xr-distance-ring-cursor"
           raycast={ignoreRaycast}
           ref={cursorModel}
-          renderOrder={1002}
+          renderOrder={XR_PANEL_RENDER_ORDER + 1002}
         >
           <primitive attach="geometry" object={cursorGeometry} />
           <primitive attach="material" object={cursorMaterial} />

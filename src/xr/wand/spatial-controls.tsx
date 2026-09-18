@@ -1,6 +1,7 @@
 'use client'
 
 import { SpatialMaterial } from './spatial-material'
+import { useXRPlayerMode } from '../mode-switching/store/player-mode'
 
 import { useWebXRSceneLayers } from '../layers'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
@@ -8,7 +9,7 @@ import { DoubleSide, Shape } from 'three'
 import { XR_WAND_PANEL_LAYOUT } from './panel-layout'
 import { SpatialLine, shapeLinePoints } from './spatial-line'
 import { SpatialText } from './spatial-text'
-import { XR_WAND_THEME } from './theme'
+import { XR_PANEL_RENDER_ORDER, XR_WAND_THEME } from './theme'
 import { useSpatialScroll } from './spatial-scroll'
 
 declare global {
@@ -81,11 +82,13 @@ export function SpatialButton({
   return (
     <group position={position} scale={pressed && !disabled ? 0.96 : 1}>
       <mesh
+        renderOrder={XR_PANEL_RENDER_ORDER + 1}
         layers={overlay}
         name={name}
         {...(scroll ? { raycast: scroll.raycast, onWheel: scroll.wheel } : {})}
         onClick={(event) => {
           event.stopPropagation()
+          if (useXRPlayerMode.getState().inputLocked) return
           if (scroll) return
           if (process.env.NODE_ENV === 'development') {
             globalThis.__pascalXRLastPointerEvent = `click:${name ?? ''}`
@@ -98,6 +101,7 @@ export function SpatialButton({
         }}
         onPointerDown={(event) => {
           event.stopPropagation()
+          if (useXRPlayerMode.getState().inputLocked) return
           if (scroll) {
             scroll.begin(event, disabled ? undefined : onClick, name)
             return
@@ -154,9 +158,11 @@ export function SpatialButton({
 }
 
 export function PanelFace({
+  depthTest = true,
   width = XR_WAND_PANEL_LAYOUT.faceWidth,
   height = XR_WAND_PANEL_LAYOUT.faceHeight,
 }: {
+  depthTest?: boolean
   width?: number
   height?: number
 } = {}) {
@@ -171,6 +177,7 @@ export function PanelFace({
       <mesh
         layers={overlay}
         name="xr-panel-background"
+        renderOrder={XR_PANEL_RENDER_ORDER}
         onClick={(event) => event.stopPropagation()}
         onPointerDown={(event) => {
           event.stopPropagation()
@@ -187,7 +194,7 @@ export function PanelFace({
         position={[0, 0, -0.012]}
       >
         <shapeGeometry args={[shape, 8]} />
-        <SpatialMaterial color={panel} depthWrite opacity={1} toneMapped={false} side={DoubleSide} />
+        <SpatialMaterial color={panel} transparent depthTest={depthTest} depthWrite={depthTest} opacity={1} toneMapped={false} side={DoubleSide} />
       </mesh>
       <SpatialLine color={border} lineWidth={1.4} opacity={0.9} points={points} />
     </>

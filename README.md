@@ -56,7 +56,35 @@ approximates the wrist with a grip-local offset; hand tracking uses wrist joints
 The band follows the wrist; the controls hide when
 turned away or tracking is lost. The watch remains available with the workspace
 hidden, and also provides **Show/Hide panel** and **Bring here**. It uses the
-existing mode transition; floor-aware entry and transition fades are separate work.
+shared mode-entry flow described below. Transition fades remain separate work.
+
+### Safe Walkthrough entry
+
+Choose Walkthrough from the wrist, controller X button, or panel to open an entry preview.
+Point the right-hand/controller ray at clear ground or a floor, then click the trigger or
+pinch to **place** the target. The blue preview becomes a fixed green marker and the popup
+offers **Enter**, **Replace**, and **Cancel**. Enter (or repeating the mode action) is gated
+until placement. Moving your ray does not move a placed target. **Replace** clears it and
+resumes aiming. UI presses cannot place targets, and entry targeting suspends scene-editing
+pointer input. Placement queries the actual click ray; it never silently substitutes a spawn.
+Without a safe destination you remain in God mode; confirmation checks current geometry again.
+
+Switching in either direction fades out for approximately 180 ms, holds a full black frame,
+applies the validated pose/scale change, and fades in for approximately 180 ms. Navigation,
+scene editing and spatial UI input are locked throughout. Active editor operations use the
+editor's cancellation path; pointer captures and panel drags are released without committing
+an editor drag. Repeated mode requests are ignored during the transition.
+
+After fading in, release buttons, grips and pinches and center the sticks. Controls rearm
+after 150 ms of tracked neutral input; a headset prompt explains when release is needed.
+Loss of headset tracking/focus pauses the transition, and session teardown resets it.
+
+The Pascal adapter classifies the site's ground/terrain, slabs and roads as candidate surfaces and checks
+body/head clearance, support near edges, and slope. Upper-level and basement elevations
+are retained. This validates arrival only; full stairs/gravity/ledge traversal is separate work.
+Generic `createWebXRViewerSession` consumers must provide the optional final `standingScene`
+provider (or `PlayerModeScene.standingScene`) with detached, life-size query meshes and
+spawn positions. Without a provider, entry fails closed rather than inventing a Y=0 floor.
 
 ### Local checks
 

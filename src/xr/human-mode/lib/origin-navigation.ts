@@ -12,7 +12,7 @@ export function translateOrigin(
   } else {
     origin.position.add(movement)
   }
-  origin.position.y = Math.max(0, origin.position.y)
+  // Preserve validated floor elevation, including below-ground floors.
 }
 
 export function rotateOriginAroundCamera(

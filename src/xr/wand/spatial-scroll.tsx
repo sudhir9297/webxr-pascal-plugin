@@ -18,7 +18,8 @@ import { positionWorld, uniform } from 'three/tsl'
 import { useWebXRSceneLayers } from '../layers'
 import { clampScroll, ScrollDrag } from './scroll-drag'
 import { visibleRows, type VisibleRows } from './visible-rows'
-import { XR_WAND_THEME } from './theme'
+import { XR_PANEL_RENDER_ORDER, XR_WAND_THEME } from './theme'
+import { useXRPlayerMode } from '../mode-switching/store/player-mode'
 
 type PointerEvent3D = ThreeEvent<PointerEvent>
 type ScrollInput = {
@@ -102,6 +103,9 @@ export function SpatialScroll({
   }
 
   useEffect(() => {
+    const unsubscribe = useXRPlayerMode.subscribe((state) => {
+      if (state.inputLocked) cancel()
+    })
     const visibility = () => {
       if (session?.visibilityState !== 'visible') cancel()
     }
@@ -109,6 +113,7 @@ export function SpatialScroll({
     session?.addEventListener('visibilitychange', visibility)
     session?.addEventListener('inputsourceschange', cancel)
     return () => {
+      unsubscribe()
       session?.removeEventListener('end', cancel)
       session?.removeEventListener('visibilitychange', visibility)
       session?.removeEventListener('inputsourceschange', cancel)
@@ -134,6 +139,7 @@ export function SpatialScroll({
     maskNode: clipping.mask,
     begin: (event, activate, targetName, scale = 1) => {
       event.stopPropagation()
+      if (useXRPlayerMode.getState().inputLocked) return false
       if (!root.current || !drag.current.begin(event.pointerId, localY(event), offsetRef.current, scale))
         return false
       activation.current = { action: activate, name: targetName }
@@ -149,6 +155,7 @@ export function SpatialScroll({
     },
     wheel: (event) => {
       event.stopPropagation()
+      if (useXRPlayerMode.getState().inputLocked) return
       updateOffset(offsetRef.current + event.deltaY * (event.deltaMode === 1 ? 0.02 : 0.001))
     },
   }
@@ -160,6 +167,7 @@ export function SpatialScroll({
   }
   const release = (event: PointerEvent3D) => {
     event.stopPropagation()
+    if (useXRPlayerMode.getState().inputLocked) { cancel(); return }
     if (drag.current.pointerId !== event.pointerId) return
     move(event)
     const click = drag.current.end(event.pointerId)
@@ -200,6 +208,7 @@ export function SpatialScroll({
           <mesh
             layers={overlay}
             name={`${name}-track`}
+            renderOrder={XR_PANEL_RENDER_ORDER + 1}
             onPointerDown={(event) => {
               event.stopPropagation()
               if (!root.current || drag.current.pointerId !== null) return
@@ -224,11 +233,12 @@ export function SpatialScroll({
             layers={overlay}
             ref={thumb}
             name={`${name}-thumb`}
+            renderOrder={XR_PANEL_RENDER_ORDER + 2}
             position={[0, travel / 2 - (offsetRef.current / limit) * travel, 0.002]}
             onPointerDown={(event) => input.begin(event, undefined, undefined, -limit / travel)}
           >
             <planeGeometry args={[0.028, thumbHeight]} />
-            <meshBasicMaterial color={XR_WAND_THEME.accentLine} toneMapped={false} />
+            <meshBasicMaterial color={XR_WAND_THEME.accentLine} toneMapped={false} transparent />
           </mesh>
         </group>
       )}

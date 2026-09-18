@@ -216,7 +216,7 @@ function WideSubscribedChoice({
   return <WideSettingRow row={{ ...row, kind: 'choice', value }} />
 }
 
-function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
+export function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const sections = new Map<string, XRWandSettingRow[]>()
   for (const row of model.rows) {
@@ -271,7 +271,7 @@ function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
     ? [
         {
           id: 'clear-selection',
-          label: 'Deselect · Workspace settings',
+          label: 'Deselect',
           onSelect: model.onClearSelection,
         },
       ]
@@ -314,11 +314,12 @@ function SettingsInspector({ model }: { model: XRWandSettingsModel }) {
   )
 }
 
-export function XRWandSettingsPanel({ adapter, panelPlacement = false }: {
+export function XRWandSettingsPanel({ adapter, panelPlacement = false, workspaceOnly = false }: {
   adapter: XRWandAdapter
   panelPlacement?: boolean
+  workspaceOnly?: boolean
 }) {
-  const model = adapter.useSettingsModel({ scope: 'selection', unpaged: true })
+  const model = adapter.useSettingsModel({ scope: workspaceOnly ? 'workspace' : 'selection', unpaged: true })
   const settings = panelPlacement ? {
     ...model,
     rows: [

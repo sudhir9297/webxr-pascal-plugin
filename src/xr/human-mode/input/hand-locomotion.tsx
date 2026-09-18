@@ -105,6 +105,7 @@ export function HumanModeHandControls() {
     pinching.current = nextPinching
 
     if (
+      useXRPlayerMode.getState().inputLocked ||
       mode !== XR_PLAYER_MODES.HUMAN ||
       !origin ||
       !tracked ||

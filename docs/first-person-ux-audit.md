@@ -5,9 +5,53 @@ Scope: original audit of plugin source, editor integration, existing QA notes, f
 ## Implementation progress
 
 - [x] **Item 1 — reachable mode switch:** compact inner-wrist ring with mode, panel visibility and panel recall actions; supports tracked hands and controllers. Controller placement corrected and checked in the Quest 3 emulator. Accepted complete by the user. Transition input locking remains item 3; broader locomotion arbitration remains item 13.
-- [ ] **Item 2 — safe standing destination: in progress.** Start with a tested destination query and arrival pose calculation. Editor surface/spawn classification, destination preview and runtime wiring remain pending; do not treat the existing entry path as validated yet.
+- [x] **Item 2 — safe standing destination: complete, accepted by the user.** Editor ground/slabs/terrain/roads supply explicit walkable geometry; roofs/items/walls supply obstacles. Entry requests open a destination preview; trigger/pinch places it and enables Enter/Replace/Cancel. Confirmation rechecks the exact placed point against current geometry. Entry preserves model-relative heading and floor elevation, including basements. Unit tests cover the query, classification, transforms, stale destinations and mode-request state; emulator checks cover placement, replacement, and entry/return. Physical Quest 3 and real multi-level testing remain unverified; user acceptance does not imply hardware certification. Fades and transition input locking remain item 3, grounded traversal remains item 6.
+
+- [ ] **Item 3 — comfortable transitions: implemented, acceptance pending.** Shared fade/commit sequence in both directions, input lock, editor cancellation, and tracked-neutral release-to-rearm. Automated and emulator checks pass; physical headset comfort and broader mid-drag acceptance remain pending.
 
 ## Current controls
+
+### Item 3 — comfortable transitions (implemented, acceptance pending)
+
+- Both directions share fade-out → full black frame → validated pose/scale commit → fade-in.
+  Each fade is approximately 180 ms; a long frame cannot skip the opaque commit boundary.
+- Navigation, room-scale correction and spatial/editor pointer input remain locked through
+  fade-in and until tracked inputs stay neutral for 150 ms. Hands require release of selection
+  and locomotion pinches/palm grabs; controllers require released buttons/grips and centered sticks.
+- Mode requests are ignored while locked. An in-headset release prompt remains readable near walls.
+  The rig pauses on missing viewer tracking/focus and resets on session teardown.
+- Editor interruption routes through Escape/cancel, abandons live terrain strokes, clears
+  deferred releases and cancels pointer captures. Panel scroll/drag/resize interactions end too.
+  It does not synthesize a commit-on-release event for active edits.
+- Verification: 183 tests pass, including phase timing, exactly-once commit, repeated requests,
+  neutral controller/hand poses, tracking gaps, and IWER null axis slots. Emulator checked
+  entry/return, held-grip locking and release-to-rearm. Physical Quest 3 comfort/stereo checks,
+  focus interruption on hardware, and a broader matrix of editor mid-drag operations remain
+  manual acceptance work; do not interpret emulator results as headset certification.
+
+### Item 2 explicit placement verification
+
+Latest item 2 interaction: right trigger/pinch explicitly places the destination. The marker
+locks and turns green; the popup then offers Enter / Replace / Cancel. Enter cannot confirm
+an unplaced preview. Replace clears placement. World editing pointers are suspended during
+targeting; UI-started presses cannot place a floor target. Click-time rays are queried afresh,
+and confirmation still revalidates the exact placed point. Automatic spawn substitution is
+disabled in this flow. Head poses come from animation frames, not input-event frames.
+
+Verification: 168 tests pass. Quest emulator exercised trigger placement, moving aim without
+losing placement, Replace clearing placement, replacement placement, and Enter via the shared
+desktop action. Physical Quest 3 pinch/trigger and multi-level acceptance remain pending.
+The final emulator regression confirmed placement on the first trigger press/release, then
+successful Enter and return to God. Placement uses selectend because IWER emits select before
+selectstart; UI press ownership is checked at both ends of the gesture.
+
+### Earlier item 2 follow-up verification (before explicit placement)
+
+The first implementation incorrectly excluded `site` meshes, including the visible flat ground and sculpted terrain, so ordinary scenes could never enable Enter. Site surfaces now participate; presentation-only horizon geometry remains excluded. Targeting follows the right input's ray and preserves the displayed destination while aiming at UI or confirming. Retarget explicitly clears the previous point and disables automatic spawn reselection. Status text updates no longer clear a pending confirmation.
+
+Regression tests reproduced the excluded-site and swallowed-confirmation failures before the fixes. All 165 plugin tests and TypeScript checks pass. The live Quest 3 emulator completed preview → Enter → God, then Retarget → move right input → Enter → God using the shared desktop action controls. Native Quest 3 hand/trigger activation and multi-level scene acceptance remain pending; no saved scene geometry was changed during these checks.
+
+The following controls describe the original audit baseline:
 
 - Controllers: left X toggles God/Human, left stick translates relative to headset yaw, right stick snaps by 30 degrees at default sensitivity.
 - Hands: palm up in an activation zone, thumb–middle-finger pinch; left hand moves, right hand continuously turns. Thumb–index selection remains separate.

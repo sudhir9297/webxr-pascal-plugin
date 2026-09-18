@@ -40,7 +40,7 @@ export function ControllerLocomotion() {
     const x = getControllerThumbstickAxis(leftController, 0)
     const y = getControllerThumbstickAxis(leftController, 1)
     const rightX = getControllerThumbstickAxis(rightController, 0)
-    if (mode !== XR_PLAYER_MODES.HUMAN || !origin) {
+    if (useXRPlayerMode.getState().inputLocked || mode !== XR_PLAYER_MODES.HUMAN || !origin) {
       setArtificialMovementSpeed(0)
       previousTurnDirection.current = 0
       return

@@ -50,6 +50,10 @@ function resetGestureOnRequest(
   resetRequest: number,
   handledResetRequest: RefObject<number>,
 ) {
+  if (useXRPlayerMode.getState().inputLocked) {
+    handledResetRequest.current = resetRequest
+    return
+  }
   if (handledResetRequest.current === resetRequest || !rootRef.current) return
   resetGodScaleRoot(rootRef.current, gesture.current)
   handledResetRequest.current = resetRequest
@@ -80,7 +84,7 @@ function GodScaleController({ sceneRootRef }: { sceneRootRef: RefObject<Object3D
     const mode: GodScaleGestureMode | null =
       leftPressed && rightPressed ? 'two' : leftPressed ? 'left' : rightPressed ? 'right' : null
 
-    if (!root || playerMode !== XR_PLAYER_MODES.GOD || !isGodScaleInteractionEnabled(mode)) {
+    if (useXRPlayerMode.getState().inputLocked || !root || playerMode !== XR_PLAYER_MODES.GOD || !isGodScaleInteractionEnabled(mode)) {
       gesture.current.mode = null
       return
     }
@@ -130,7 +134,7 @@ function GodScaleHandController({ sceneRootRef }: { sceneRootRef: RefObject<Obje
     const mode: GodScaleGestureMode | null =
       leftGrabbed && rightGrabbed ? 'two' : leftGrabbed ? 'left' : rightGrabbed ? 'right' : null
 
-    if (!root || playerMode !== XR_PLAYER_MODES.GOD || !isGodScaleInteractionEnabled(mode)) {
+    if (useXRPlayerMode.getState().inputLocked || !root || playerMode !== XR_PLAYER_MODES.GOD || !isGodScaleInteractionEnabled(mode)) {
       gesture.current.mode = null
       return
     }
@@ -154,6 +158,10 @@ export function GodModeControls({ sceneRootRef }: { sceneRootRef: RefObject<Obje
   const handledResetRequest = useRef(resetRequest)
 
   useEffect(() => {
+    if (useXRPlayerMode.getState().inputLocked) {
+      handledResetRequest.current = resetRequest
+      return
+    }
     if (handledResetRequest.current === resetRequest || !sceneRootRef.current || !origin) return
     resetGodScaleRoot(sceneRootRef.current, { mode: null })
     origin.position.copy(GOD_ORIGIN_POSITION)

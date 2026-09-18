@@ -2,7 +2,7 @@ import type { Object3D, Raycaster } from 'three'
 import { XR_WAND_PANEL_INPUT_NAME } from './wand/panel-layout'
 
 // Keep the existing root name compatible with integrations using the wand API.
-export const SPATIAL_UI_ROOT_NAMES = [XR_WAND_PANEL_INPUT_NAME, 'xr-workspace-hand-shortcut'] as const
+export const SPATIAL_UI_ROOT_NAMES = [XR_WAND_PANEL_INPUT_NAME, 'xr-workspace-hand-shortcut', 'xr-entry-preview'] as const
 
 export function isSpatialUIObject(object: Object3D | null | undefined): boolean {
   let found = false

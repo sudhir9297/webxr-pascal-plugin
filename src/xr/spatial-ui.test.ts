@@ -3,6 +3,20 @@ import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 
 import { isSpatialUIObject, rayHitsSpatialUI, SpatialUIInputOwnership } from './spatial-ui'
 
 describe('spatial UI input routing', () => {
+  test('entry preview claims clicks instead of editing the scene behind it', () => {
+    const root = new Group()
+    root.name = 'xr-entry-preview'
+    const button = new Mesh(new BoxGeometry(0.1, 0.1, 0.01), new MeshBasicMaterial())
+    button.position.z = -0.5
+    root.add(button)
+    const scene = new Group().add(root)
+    const ray = new Raycaster(new Vector3(), new Vector3(0, 0, -1))
+    expect(rayHitsSpatialUI(scene, ray)).toBe(true)
+    root.visible = false
+    expect(rayHitsSpatialUI(scene, ray)).toBe(false)
+    button.geometry.dispose()
+    button.material.dispose()
+  })
   test('blocks scene rays on the workspace, but not hidden content', () => {
     const scene = new Group()
     const panel = new Group()

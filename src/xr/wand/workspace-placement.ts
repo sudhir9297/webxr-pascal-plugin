@@ -9,6 +9,20 @@ export function workspaceParentPoint(root: Object3D, worldPoint: Vector3, target
   return target
 }
 
+// Panel-center limits in world metres relative to the current viewer height.
+export const WORKSPACE_DRAG_MIN_HEIGHT = -0.7
+export const WORKSPACE_DRAG_MAX_HEIGHT = 0.35
+
+export function clampWorkspaceDragHeight(root: Object3D, target: Vector3, eye: Vector3) {
+  // Drag targets are parent-local; clamp in world space so host scaling and
+  // rotation cannot change the user's comfortable vertical range.
+  root.parent?.updateWorldMatrix(true, false)
+  root.parent?.localToWorld(target)
+  target.y = Math.max(eye.y + WORKSPACE_DRAG_MIN_HEIGHT, Math.min(eye.y + WORKSPACE_DRAG_MAX_HEIGHT, target.y))
+  root.parent?.worldToLocal(target)
+  return target
+}
+
 export function placeWorkspace(eye: Vector3, direction: Vector3, target: Vector3) {
   target.set(direction.x, 0, direction.z)
   if (target.lengthSq() < 0.0001) target.set(0, 0, -1)

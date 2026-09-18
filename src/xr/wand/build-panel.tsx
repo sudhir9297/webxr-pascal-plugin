@@ -36,6 +36,7 @@ export function PaletteTile({
     >
       {item.icon && (
         <PanelIcon
+          muted={!item.active}
           color={item.icon.color}
           positionY={compact ? 0.023 : 0.025}
           size={compact ? 0.078 : 0.11}
@@ -45,7 +46,7 @@ export function PaletteTile({
       <SpatialText
         anchorX="center"
         anchorY="middle"
-        color={XR_WAND_THEME.text}
+        color={item.active ? XR_WAND_THEME.text : XR_WAND_THEME.muted}
         fontSize={item.icon ? (compact ? 0.021 : 0.025) : 0.03}
         maxWidth={compact ? 0.27 : 0.26}
         position={[0, item.icon ? (compact ? -0.052 : -0.067) : 0, 0.012]}
@@ -57,7 +58,7 @@ export function PaletteTile({
   )
 }
 
-export function XRWandBuildPanel({ adapter, separateItems = false }: { adapter: XRWandAdapter; separateItems?: boolean }) {
+export function XRWandBuildPanel({ adapter, separateItems = false, hideDetails = false }: { adapter: XRWandAdapter; separateItems?: boolean; hideDetails?: boolean }) {
   const model = adapter.useBuildModel({ separateItems })
   const hasChildren = !!model.secondaryItems?.length
   const details = adapter.useSettingsModel({ scope: 'context', unpaged: true })
@@ -96,7 +97,7 @@ export function XRWandBuildPanel({ adapter, separateItems = false }: { adapter: 
           pageCount={model.pageCount}
         />
       )}
-      {model.detailMode === 'paint' ? (
+      {hideDetails ? null : model.detailMode === 'paint' ? (
         <group name="xr-build-details" {...sidePanelPose(1.4)}>
           <PanelFace width={1.4} height={1.04} />
           <XRWandPaintPanel adapter={adapter} />

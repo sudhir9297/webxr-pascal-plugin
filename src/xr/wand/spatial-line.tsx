@@ -1,6 +1,7 @@
 'use client'
 
 import { LineBasicNodeMaterial } from 'three/webgpu'
+import { XR_PANEL_RENDER_ORDER } from './theme'
 import { useSpatialScroll } from './spatial-scroll'
 import { useWebXRSceneLayers } from '../layers'
 import { useEffect, useMemo } from 'react'
@@ -39,7 +40,7 @@ export function SpatialLine({
           color,
           linewidth: lineWidth,
           opacity,
-          transparent: transparent || opacity < 1,
+          transparent: true,
         }),
       ),
     [color, lineWidth, opacity, pointKey, transparent, scroll?.maskNode],
@@ -54,6 +55,6 @@ export function SpatialLine({
   )
 
   line.layers.set(overlay)
-  line.renderOrder = renderOrder
+  line.renderOrder = XR_PANEL_RENDER_ORDER + renderOrder
   return <primitive object={line} raycast={() => undefined} />
 }

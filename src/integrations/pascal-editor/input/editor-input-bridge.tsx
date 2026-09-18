@@ -41,6 +41,7 @@ import {
 } from '@pascal-app/editor'
 import { useViewer } from '@pascal-app/viewer'
 import { useXRWorkspace } from '../../../xr/wand/workspace-store'
+import { useXRPlayerMode } from '../../../xr/mode-switching/store/player-mode'
 import { shouldRecallWorkspaceForSelection } from './workspace-selection'
 import { rayHitsSpatialUI } from '../../../xr/spatial-ui'
 import { useFrame, useThree } from '@react-three/fiber'
@@ -541,6 +542,7 @@ export function XREditorInputBridge() {
     let active = true
     const onNodePointerDown = (event: NodeEvent) => {
       if (!isXRNodePointer(event)) return
+      if (useXRPlayerMode.getState().entryRequested || useXRPlayerMode.getState().inputLocked) return
       if (useEditor.getState().mode !== 'select') return
       if (useInteractionScope.getState().scope.kind !== 'idle') return
 
@@ -587,6 +589,30 @@ export function XREditorInputBridge() {
 
   useEffect(() => {
     if (!session) return
+    // Use the editor's cancellation path so live transforms/drafts roll back,
+    // rather than synthesizing pointerup (which would commit a drag).
+    return useXRPlayerMode.subscribe((next, previous) => {
+      const interrupted = next.inputLocked || next.entryRequested
+      if (!interrupted || previous.inputLocked || previous.entryRequested) return
+      abandonTerrainStroke()
+      terrainFocus.current = null
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      for (const source of session.inputSources) {
+        spatialPointerInput.cancel(source)
+        selectReleaseGuard.current.cancel(source)
+        dispatchWindowPointerEvent('pointercancel', source)
+      }
+      capturedInputSource.current = null
+      panelInputSources.current.clear()
+      terrainInputSources.current.clear()
+      lastXRWallEvent.current = null
+      lastSyntheticWallEvent.current = null
+      useViewer.getState().setInputDragging(false)
+    })
+  }, [session, abandonTerrainStroke, dispatchWindowPointerEvent])
+
+  useEffect(() => {
+    if (!session) return
 
     const rememberXRWallEvent = (event: WallEvent) => {
       lastXRWallEvent.current = event
@@ -600,6 +626,10 @@ export function XREditorInputBridge() {
     emitter.on('wall:leave', clearXRWallEvent)
 
     const onSelectStart = (event: XRInputSourceEvent) => {
+      if (useXRPlayerMode.getState().entryRequested || useXRPlayerMode.getState().inputLocked) {
+        panelInputSources.current.add(xrInputSourceKey(event.inputSource))
+        return
+      }
       selectReleaseGuard.current.start(event.inputSource)
       if (isWandPanelHit(event.frame, event.inputSource)) {
         panelInputSources.current.add(xrInputSourceKey(event.inputSource))
@@ -616,6 +646,11 @@ export function XREditorInputBridge() {
       emitGridEvent('pointerdown', event.frame, event.inputSource, 1)
     }
     const onSelectEnd = (event: XRInputSourceEvent) => {
+      if (useXRPlayerMode.getState().entryRequested || useXRPlayerMode.getState().inputLocked) {
+        panelInputSources.current.delete(xrInputSourceKey(event.inputSource))
+        selectReleaseGuard.current.cancel(event.inputSource)
+        return
+      }
       // Commit the release pose, including movement since the last rendered frame.
       if (updateRay(event.frame, event.inputSource)) {
         spatialPointerInput.move(event.inputSource, raycaster.current.ray)
@@ -749,6 +784,10 @@ export function XREditorInputBridge() {
 
   useFrame((_, __, frame) => {
     if (!(frame && session)) return
+    if (useXRPlayerMode.getState().entryRequested || useXRPlayerMode.getState().inputLocked) {
+      terrainFocus.current = null
+      return
+    }
     const inputSources = Array.from(session.inputSources)
     if (shouldReleaseCapturedXRInput(inputSources, capturedInputSource.current)) {
       spatialPointerInput.cancel(capturedInputSource.current!)

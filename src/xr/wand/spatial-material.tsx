@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo } from 'react'
 import type { MeshBasicMaterialParameters } from 'three'
-import { MeshBasicNodeMaterial } from 'three/webgpu'
+import { MeshBasicNodeMaterial, type Node } from 'three/webgpu'
 import { useSpatialScroll } from './spatial-scroll'
 
-export function SpatialMaterial(props: MeshBasicMaterialParameters) {
+export function SpatialMaterial({ colorNode, ...props }: MeshBasicMaterialParameters & { colorNode?: Node }) {
   const scroll = useSpatialScroll()
-  const clipped = scroll !== null
-  const material = useMemo(() => (clipped ? new MeshBasicNodeMaterial() : null), [clipped])
+  const needsNodeMaterial = scroll !== null || colorNode != null
+  const material = useMemo(() => (needsNodeMaterial ? new MeshBasicNodeMaterial() : null), [needsNodeMaterial])
   useEffect(() => () => material?.dispose(), [material])
-  if (!scroll || !material) return <meshBasicMaterial {...props} />
+  if (!material) return <meshBasicMaterial {...props} />
   // Clip in world space so both XR eyes use the same viewport boundaries.
-  return <primitive object={material} attach="material" {...props} maskNode={scroll.maskNode} />
+  return <primitive object={material} attach="material" {...props} colorNode={colorNode ?? null} maskNode={scroll?.maskNode ?? null} />
 }

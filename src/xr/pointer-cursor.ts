@@ -22,3 +22,9 @@ export const DISTANCE_AWARE_RAY_POINTER_OPTIONS = {
     cursorOffset: 0.008,
   },
 } satisfies DefaultXRInputSourceRayPointerOptions
+
+// Keep an aiming guide when editor placement uses a plane rather than a pointer target.
+export function resolvePointerRayLength(distance?: number, maxLength?: number): number {
+  const hitDistance = distance != null && Number.isFinite(distance) && distance >= 0 ? distance : 5
+  return Math.min(maxLength ?? hitDistance, hitDistance)
+}

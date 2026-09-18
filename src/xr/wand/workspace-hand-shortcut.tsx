@@ -36,6 +36,8 @@ export function WorkspaceHandShortcut() {
   const controller = useXRInputSourceState('controller', 'left')
   const visible = useXRWorkspace((state) => state.visible)
   const mode = useXRPlayerMode((state) => state.mode)
+  const entryRequested = useXRPlayerMode((state) => state.entryRequested)
+  const entryPlaced = useXRPlayerMode((state) => state.entryPlaced)
   const action = wristModeAction(mode)
   const watch = useRef<Group>(null)
   const screen = useRef<Group>(null)
@@ -144,7 +146,7 @@ export function WorkspaceHandShortcut() {
               },
               {
                 name: 'xr-wrist-mode-switch',
-                label: mode === 'god' ? 'Enter\nWalk' : 'God\nmode',
+                label: mode === 'god' ? (entryRequested ? (entryPlaced ? 'Enter\nWalk' : 'Place\ntarget') : 'Enter\nWalk') : 'God\nmode',
                 run: () => useXRPlayerMode.getState().setMode(action.target),
               },
               {

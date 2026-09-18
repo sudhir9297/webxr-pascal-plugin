@@ -1,6 +1,7 @@
 'use client'
 
 import { SpatialMaterial } from './spatial-material'
+import { XR_PANEL_RENDER_ORDER } from './theme'
 
 import { useWebXRSceneLayers } from '../layers'
 import { Children, type ReactNode, useEffect, useMemo } from 'react'
@@ -45,6 +46,7 @@ export function SpatialText({
   position,
   renderOrder = 6,
   textAlign = 'center',
+  depthTest = true,
 }: {
   anchorX?: 'center' | 'left' | 'right'
   anchorY?: 'bottom' | 'middle' | 'top'
@@ -55,6 +57,7 @@ export function SpatialText({
   position: [number, number, number]
   renderOrder?: number
   textAlign?: 'center' | 'left' | 'right'
+  depthTest?: boolean
 }) {
   const { overlay } = useWebXRSceneLayers()
   const text = Children.toArray(children).join('')
@@ -111,11 +114,12 @@ export function SpatialText({
     <mesh
       layers={overlay}
       position={[position[0] + offsetX, position[1] + offsetY, position[2]]}
-      renderOrder={renderOrder}
+      renderOrder={XR_PANEL_RENDER_ORDER + renderOrder}
       raycast={() => undefined}
     >
       <planeGeometry args={[rendered.width, rendered.height]} />
       <SpatialMaterial
+        depthTest={depthTest}
         alphaTest={0.02}
         depthWrite={false}
         map={rendered.texture}
